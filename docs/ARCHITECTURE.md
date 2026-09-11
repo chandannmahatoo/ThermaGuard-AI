@@ -10,4 +10,4 @@ External HTTP requests have explicit timeouts and identify the project with a Us
 
 Analytics windows accept 24h/7d/30d/365d and return `available=false, reason=insufficient_history` when the visible dataset holds no records in the window; the dashboard renders an explicit notice instead of an empty chart.
 
-The backend is designed for a single local process. SQLite and JSON keep setup small; production geospatial indexing and transactional model versioning are future work. The supplied workflow image is preserved at the project root.
+The backend is designed for a single local process. SQLite and JSON keep setup small; production geospatial indexing and transactional model versioning are future work. The supplied workflow image is preserved at `docs/workflow.png`.

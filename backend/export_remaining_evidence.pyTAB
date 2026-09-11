@@ -1,0 +1,42 @@
+import os
+import subprocess
+import pandas as pd
+
+df = pd.read_csv("data/review_candidates.csv")
+
+reviewed = df["reviewed"].astype(str).str.lower().eq("true")
+remaining = df[~reviewed]
+
+out = []
+
+for event_id in remaining["event_id"].astype(str):
+    out.append("\n" + "=" * 90)
+    out.append(f"EVENT {event_id}")
+    out.append("=" * 90)
+
+    p = subprocess.run(
+        [
+            "./.venv/bin/python",
+            "backend/prepare_review_row.py",
+            event_id,
+        ],
+        env={
+            **os.environ,
+            "PYTHONPATH": "backend",
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    out.append(p.stdout)
+
+    if p.stderr:
+        out.append("STDERR:")
+        out.append(p.stderr)
+
+with open("data/remaining_review_evidence.txt", "w") as f:
+    f.write("\n".join(out))
+
+print(f"Wrote evidence for {len(remaining)} remaining candidates")
+print("data/remaining_review_evidence.txt")
+

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
+from itertools import product
 import csv
-from .review_validation import valid_source_reference
 import json
 import math
+from .review_validation import valid_source_reference
 from pathlib import Path
 from datetime import datetime, timezone
 import joblib
@@ -9,7 +12,6 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import make_pipeline
-from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_recall_fscore_support, classification_report, confusion_matrix
 from .intelligence import FEATURES, FEATURE_VERSION, CLASSES, features
 ROOT=Path(__file__).resolve().parents[2]
@@ -140,19 +142,245 @@ def status():
     meta=json.loads(META.read_text()) if META.exists() and ARTIFACT.exists() else {}
     return dict(training_ready=ready,model_available=bool(meta) and meta.get('features')==FEATURES and meta.get('feature_version')==FEATURE_VERSION,model_version=meta.get('model_version'),eligible_labeled_rows=len(rows),reason=error or ('Dataset eligible; split coverage checked during training' if ready else 'Need at least 30 reviewed non-demo events, all five classes and 10 independent split groups'),feature_version=FEATURE_VERSION)
 
+def _find_valid_group_split(y, groups):
+    """Find a deterministic leakage-safe train/validation/test group split.
+
+    Whole split_group cohorts stay together. Every split must contain every
+    class in CLASSES. Among valid assignments, prefer a split closest to
+    60/20/20 by row count.
+    """
+    required_classes = set(CLASSES)
+    unique_groups = sorted(set(groups.tolist()))
+
+    if len(unique_groups) < 3:
+        raise ValueError(
+            "At least three independent groups are required for "
+            "train, validation and test splitting"
+        )
+
+    group_indices = {
+        group: np.where(groups == group)[0]
+        for group in unique_groups
+    }
+    group_labels = {
+        group: set(y[group_indices[group]].tolist())
+        for group in unique_groups
+    }
+
+    # Quick feasibility check: each class must occur in at least three
+    # independent groups, otherwise three disjoint splits cannot all contain it.
+    class_group_counts = {
+        class_name: sum(
+            class_name in group_labels[group]
+            for group in unique_groups
+        )
+        for class_name in CLASSES
+    }
+    insufficient = {
+        class_name: count
+        for class_name, count in class_group_counts.items()
+        if count < 3
+    }
+    if insufficient:
+        details = ", ".join(
+            f"{name}={count}"
+            for name, count in sorted(insufficient.items())
+        )
+        raise ValueError(
+            "No leakage-safe 3-way split is possible because some classes "
+            f"occur in fewer than three independent groups: {details}"
+        )
+
+    total_rows = len(y)
+    target_train = total_rows * 0.60
+    target_validation = total_rows * 0.20
+    target_test = total_rows * 0.20
+
+    best_split = None
+    best_score = None
+
+    # 0=train, 1=validation, 2=test.
+    # The current dataset has 13 groups, so exhaustive search is manageable.
+    for assignment in product((0, 1, 2), repeat=len(unique_groups)):
+        if 0 not in assignment or 1 not in assignment or 2 not in assignment:
+            continue
+
+        train_groups = [
+            unique_groups[i]
+            for i, split_id in enumerate(assignment)
+            if split_id == 0
+        ]
+        validation_groups = [
+            unique_groups[i]
+            for i, split_id in enumerate(assignment)
+            if split_id == 1
+        ]
+        test_groups = [
+            unique_groups[i]
+            for i, split_id in enumerate(assignment)
+            if split_id == 2
+        ]
+
+        train_labels = set().union(*(group_labels[g] for g in train_groups))
+        validation_labels = set().union(
+            *(group_labels[g] for g in validation_groups)
+        )
+        test_labels = set().union(*(group_labels[g] for g in test_groups))
+
+        if train_labels != required_classes:
+            continue
+        if validation_labels != required_classes:
+            continue
+        if test_labels != required_classes:
+            continue
+
+        tr = np.concatenate([group_indices[g] for g in train_groups])
+        va = np.concatenate([group_indices[g] for g in validation_groups])
+        test = np.concatenate([group_indices[g] for g in test_groups])
+
+        score = (
+            abs(len(tr) - target_train)
+            + abs(len(va) - target_validation)
+            + abs(len(test) - target_test)
+        )
+
+        # Deterministic tie-breaking comes from sorted groups + product order.
+        if best_score is None or score < best_score:
+            best_score = score
+            best_split = {
+                "train_indices": tr,
+                "validation_indices": va,
+                "test_indices": test,
+                "train_groups": train_groups,
+                "validation_groups": validation_groups,
+                "test_groups": test_groups,
+                "score": float(score),
+            }
+
+    if best_split is None:
+        raise ValueError(
+            "No leakage-safe train/validation/test group partition contains "
+            "every class in every split. Add more independently reviewed groups."
+        )
+
+    return best_split
+
+
 def train():
-    if not status()['training_ready']: raise ValueError(status()['reason'])
-    rows=dataset(); X=np.array([features(r) for r in rows]); y=np.array([r['label'] for r in rows]); groups=np.array([r['split_group'] for r in rows])
-    a,test=next(GroupShuffleSplit(n_splits=1,test_size=.2,random_state=42).split(X,y,groups))
-    tr,va=next(GroupShuffleSplit(n_splits=1,test_size=.25,random_state=17).split(X[a],y[a],groups[a])); tr,va=a[tr],a[va]
-    if any(set(y[index])!=set(CLASSES) for index in (tr,va,test)): raise ValueError('Independent train/validation/test splits must each contain every class; supply more reviewed groups')
-    model=make_pipeline(SimpleImputer(strategy='median',add_indicator=True,keep_empty_features=True),RandomForestClassifier(n_estimators=200,class_weight='balanced',random_state=42,n_jobs=1))
-    model.fit(X[tr],y[tr])
+    current_status = status()
+    if not current_status["training_ready"]:
+        raise ValueError(current_status["reason"])
+
+    rows = dataset()
+    X = np.array([features(r) for r in rows])
+    y = np.array([r["label"] for r in rows])
+    groups = np.array([r["split_group"] for r in rows])
+
+    split = _find_valid_group_split(y, groups)
+    tr = split["train_indices"]
+    va = split["validation_indices"]
+    test = split["test_indices"]
+
+    required_classes = set(CLASSES)
+    for split_name, index in (
+        ("train", tr),
+        ("validation", va),
+        ("test", test),
+    ):
+        if set(y[index]) != required_classes:
+            raise ValueError(
+                f"{split_name} split does not contain every required class"
+            )
+
+    model = make_pipeline(
+        SimpleImputer(
+            strategy="median",
+            add_indicator=True,
+            keep_empty_features=True,
+        ),
+        RandomForestClassifier(
+            n_estimators=200,
+            class_weight="balanced",
+            random_state=42,
+            n_jobs=1,
+        ),
+    )
+    model.fit(X[tr], y[tr])
+
     def evaluate(index):
-        prediction=model.predict(X[index]); p,r,f,_=precision_recall_fscore_support(y[index],prediction,average='macro',zero_division=0)
-        return dict(accuracy=accuracy_score(y[index],prediction),balanced_accuracy=balanced_accuracy_score(y[index],prediction),macro_precision=p,macro_recall=r,macro_f1=f,per_class=classification_report(y[index],prediction,output_dict=True,zero_division=0),confusion_matrix=confusion_matrix(y[index],prediction,labels=CLASSES).tolist())
-    meta=dict(model_version=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'),feature_version=FEATURE_VERSION,features=FEATURES,classes=CLASSES,validation=evaluate(va),test=evaluate(test),split_counts={'train':len(tr),'validation':len(va),'test':len(test)})
-    ARTIFACT.parent.mkdir(exist_ok=True);joblib.dump(model,ARTIFACT);META.write_text(json.dumps(meta,indent=2));return meta
+        truth = y[index]
+        prediction = model.predict(X[index])
+        p, r, f, _ = precision_recall_fscore_support(
+            truth,
+            prediction,
+            average="macro",
+            zero_division=0,
+        )
+        return dict(
+            rows=int(len(index)),
+            accuracy=float(accuracy_score(truth, prediction)),
+            balanced_accuracy=float(
+                balanced_accuracy_score(truth, prediction)
+            ),
+            macro_precision=float(p),
+            macro_recall=float(r),
+            macro_f1=float(f),
+            per_class=classification_report(
+                truth,
+                prediction,
+                labels=CLASSES,
+                output_dict=True,
+                zero_division=0,
+            ),
+            confusion_matrix=confusion_matrix(
+                truth,
+                prediction,
+                labels=CLASSES,
+            ).tolist(),
+        )
+
+    meta = dict(
+        model_version=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+        feature_version=FEATURE_VERSION,
+        features=FEATURES,
+        classes=CLASSES,
+        algorithm="RandomForestClassifier",
+        n_estimators=200,
+        class_weight="balanced",
+        random_state=42,
+        training_rows=len(rows),
+        validation=evaluate(va),
+        test=evaluate(test),
+        split_counts={
+            "train": len(tr),
+            "validation": len(va),
+            "test": len(test),
+        },
+        split_groups={
+            "train": split["train_groups"],
+            "validation": split["validation_groups"],
+            "test": split["test_groups"],
+        },
+        split_class_distribution={
+            "train": {
+                class_name: int(np.sum(y[tr] == class_name))
+                for class_name in CLASSES
+            },
+            "validation": {
+                class_name: int(np.sum(y[va] == class_name))
+                for class_name in CLASSES
+            },
+            "test": {
+                class_name: int(np.sum(y[test] == class_name))
+                for class_name in CLASSES
+            },
+        },
+    )
+
+    ARTIFACT.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, ARTIFACT)
+    META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return meta
 
 def predict(event):
     if not ARTIFACT.exists() or not META.exists(): return dict(predicted_class=None,class_probabilities=None,classification_confidence=None,model_version=None,feature_version=FEATURE_VERSION,reason='No model trained on reviewed observations')

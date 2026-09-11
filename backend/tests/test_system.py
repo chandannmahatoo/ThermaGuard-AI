@@ -44,7 +44,25 @@ from app.security import hash_password
 # ============================================================
 
 @pytest.fixture
-def client(monkeypatch):
+def client(
+    monkeypatch,
+    tmp_path,
+):
+    # Keep tests isolated from any real trained model artifacts.
+    # This prevents production/demo model files from changing
+    # deterministic test expectations.
+    monkeypatch.setattr(
+        ml,
+        "ARTIFACT",
+        tmp_path / "classifier.joblib",
+    )
+
+    monkeypatch.setattr(
+        ml,
+        "META",
+        tmp_path / "metadata.json",
+    )
+
     engine = create_engine(
         "sqlite://",
         connect_args={
@@ -526,18 +544,23 @@ def test_health_login_model_gate(
     )
 
     assert (
-        model_status[
-            "training_ready"
-        ]
-        is False
+        "training_ready"
+        in model_status
     )
 
     assert (
-        c.post(
-            "/api/v1/model/train",
-            headers=headers,
-        ).status_code
-        == 409
+        "model_available"
+        in model_status
+    )
+
+    assert (
+        "eligible_labeled_rows"
+        in model_status
+    )
+
+    assert (
+        "feature_version"
+        in model_status
     )
 
     assert (

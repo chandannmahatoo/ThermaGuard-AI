@@ -1,19 +1,33 @@
-.env
-.env.local
-.venv/
 venv/
+.venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
 node_modules/
 .next/
 dist/
 build/
-coverage/
+tsconfig.tsbuildinfo
+
 *.log
 .DS_Store
 __MACOSX/
-tsconfig.tsbuildinfo
+
+# Environment and secrets (backend/.env covered by .env)
+.env
+.env.local
+backend/.env
+
+# Local databases and model artifacts
 *.db
 models/*.joblib
 models/*.json
+
+# Frontend local env
+frontend/.env*
+!frontend/.env.example

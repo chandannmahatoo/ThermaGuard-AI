@@ -1,0 +1,1327 @@
+
+==========================================================================================
+EVENT TG-firms-067b7987b61e0a46c33d
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-067b7987b61e0a46c33d
+  is_demo: No
+  latitude: 20.75956
+  longitude: 85.29154
+  start_time: 2026-09-05T20:46:00+00:00
+  last_seen_time: 2026-09-05T20:46:00+00:00
+  detection_count: 1
+  mean_frp: 1.38
+  max_frp: 1.38
+  mean_brightness: 300.22
+  max_brightness: 300.22
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 0
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-1a552a72d32d2aa6ff08
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-1a552a72d32d2aa6ff08
+  is_demo: No
+  latitude: 20.965723333333333
+  longitude: 85.17438666666666
+  start_time: 2026-09-08T19:49:00+00:00
+  last_seen_time: 2026-09-08T19:49:00+00:00
+  detection_count: 12
+  mean_frp: 1.9216666666666666
+  max_frp: 3.59
+  mean_brightness: 302.11333333333334
+  max_brightness: 309.48
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 1
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-1a74190a4abd22ccee76
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-1a74190a4abd22ccee76
+  is_demo: No
+  latitude: 20.96967409090909
+  longitude: 85.16673409090909
+  start_time: 2026-09-05T08:18:00+00:00
+  last_seen_time: 2026-09-05T20:46:00+00:00
+  detection_count: 22
+  mean_frp: 2.924090909090909
+  max_frp: 6.38
+  mean_brightness: 318.9190909090909
+  max_brightness: 345.88
+  persistence_days: 1
+  duration_hours: 12.466666666666667
+  night_fraction: 0.7272727272727273
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 9
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-28cdedb033f322e8c576
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-28cdedb033f322e8c576
+  is_demo: No
+  latitude: 20.8645775
+  longitude: 84.9890925
+  start_time: 2026-09-08T19:49:00+00:00
+  last_seen_time: 2026-09-08T19:49:00+00:00
+  detection_count: 4
+  mean_frp: 1.3824999999999998
+  max_frp: 1.96
+  mean_brightness: 300.4225
+  max_brightness: 306.75
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 3
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-3297f9d156835a0a1537
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-3297f9d156835a0a1537
+  is_demo: No
+  latitude: 20.796496666666666
+  longitude: 85.25738666666666
+  start_time: 2026-09-08T19:49:00+00:00
+  last_seen_time: 2026-09-08T19:49:00+00:00
+  detection_count: 3
+  mean_frp: 2.7466666666666666
+  max_frp: 3.87
+  mean_brightness: 304.86999999999995
+  max_brightness: 315.69
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 1
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-3397d3c737eba55ac004
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-3397d3c737eba55ac004
+  is_demo: No
+  latitude: 22.92957
+  longitude: 70.10769
+  start_time: 2026-09-10T08:26:00+00:00
+  last_seen_time: 2026-09-10T08:26:00+00:00
+  detection_count: 1
+  mean_frp: 7.09
+  max_frp: 7.09
+  mean_brightness: 338.96
+  max_brightness: 338.96
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 0.0
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: Yes
+  distance_to_industrial_m: 0.0
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: 1
+  nearby_facility_count: 1
+  landuse_class: industrial
+  nearby_facility_names: Tuna-Tekra Container Terminal
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 13
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-34beb5f4914d6766742b
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-34beb5f4914d6766742b
+  is_demo: No
+  latitude: 20.88789
+  longitude: 84.982045
+  start_time: 2026-09-08T19:49:00+00:00
+  last_seen_time: 2026-09-08T19:49:00+00:00
+  detection_count: 2
+  mean_frp: 1.3900000000000001
+  max_frp: 1.48
+  mean_brightness: 302.015
+  max_brightness: 305.39
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 3
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-354f64e5836d2a13c442
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-354f64e5836d2a13c442
+  is_demo: No
+  latitude: 19.96099
+  longitude: 79.33219
+  start_time: 2026-09-08T19:49:00+00:00
+  last_seen_time: 2026-09-08T19:49:00+00:00
+  detection_count: 1
+  mean_frp: 0.78
+  max_frp: 0.78
+  mean_brightness: 300.58
+  max_brightness: 300.58
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 1
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 0
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-439758d35ce9920ad43e
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-439758d35ce9920ad43e
+  is_demo: No
+  latitude: 20.95599
+  longitude: 85.01165
+  start_time: 2026-09-05T20:46:00+00:00
+  last_seen_time: 2026-09-05T20:46:00+00:00
+  detection_count: 2
+  mean_frp: 1.4700000000000002
+  max_frp: 1.61
+  mean_brightness: 304.425
+  max_brightness: 305.69
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-484050869f0b38f9404f
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-484050869f0b38f9404f
+  is_demo: No
+  latitude: 21.101914999999998
+  longitude: 72.64307500000001
+  start_time: 2026-08-28T21:38:00+00:00
+  last_seen_time: 2026-08-28T21:38:00+00:00
+  detection_count: 2
+  mean_frp: 0.97
+  max_frp: 1.2
+  mean_brightness: 303.25
+  max_brightness: 305.36
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 8
+  historical_baseline_available: Yes
+  historical_mean_frp: 4.718570075757576
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: 0
+  abnormality_status: within_baseline
+  baseline_available: Yes
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 0
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-59781240d8e0ae0f3170
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-59781240d8e0ae0f3170
+  is_demo: No
+  latitude: 20.798
+  longitude: 85.25653333333334
+  start_time: 2026-09-05T20:46:00+00:00
+  last_seen_time: 2026-09-05T20:46:00+00:00
+  detection_count: 3
+  mean_frp: 3.1133333333333333
+  max_frp: 4.69
+  mean_brightness: 317.9266666666667
+  max_brightness: 334.7
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 2
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-67b1a7dc95a8e01f5d5c
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-67b1a7dc95a8e01f5d5c
+  is_demo: No
+  latitude: 31.23082
+  longitude: 75.08361
+  start_time: 2026-09-05T08:20:00+00:00
+  last_seen_time: 2026-09-05T08:20:00+00:00
+  detection_count: 1
+  mean_frp: 4.59
+  max_frp: 4.59
+  mean_brightness: 335.64
+  max_brightness: 335.64
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 0.0
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 2
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-870b462a74eed7e91086
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-870b462a74eed7e91086
+  is_demo: No
+  latitude: 20.88569
+  longitude: 84.9837
+  start_time: 2026-09-05T20:46:00+00:00
+  last_seen_time: 2026-09-05T20:46:00+00:00
+  detection_count: 2
+  mean_frp: 1.67
+  max_frp: 1.67
+  mean_brightness: 315.54
+  max_brightness: 325.41
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 1
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-eb7aff5b08219fa0be97
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-eb7aff5b08219fa0be97
+  is_demo: No
+  latitude: 19.82081
+  longitude: 79.33638
+  start_time: 2026-09-08T21:31:00+00:00
+  last_seen_time: 2026-09-08T21:31:00+00:00
+  detection_count: 1
+  mean_frp: 1.84
+  max_frp: 1.84
+  mean_brightness: 300.96
+  max_brightness: 300.96
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 1.0
+
+Derived historical context
+  recurrence_count: 1
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-ee98742f57357bb34854
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-ee98742f57357bb34854
+  is_demo: No
+  latitude: 23.10672
+  longitude: 72.22006
+  start_time: 2026-09-10T08:26:00+00:00
+  last_seen_time: 2026-09-10T08:26:00+00:00
+  detection_count: 1
+  mean_frp: 2.57
+  max_frp: 2.57
+  mean_brightness: 332.7
+  max_brightness: 332.7
+  persistence_days: 1
+  duration_hours: 0.0
+  night_fraction: 0.0
+
+Derived historical context
+  recurrence_count: 0
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: Yes
+  distance_to_industrial_m: 3032.3
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: 4045.9
+  nearby_industrial_count: 3
+  nearby_facility_count: 4
+  landuse_class: Unavailable
+  nearby_facility_names: Suryam Repose
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: Yes
+  ndvi: 0.1865
+  acquisition_date: 2026-09-08
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 1
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
+
+
+==========================================================================================
+EVENT TG-firms-fd17266b4d6fdaaa1026
+==========================================================================================
+THERMAGUARD — HUMAN REVIEW EVIDENCE
+Stored evidence only. No class is suggested; the final label belongs to the reviewer.
+
+Identity and observation aggregates (FRP: MW; brightness: K; duration: hours)
+  event_id: TG-firms-fd17266b4d6fdaaa1026
+  is_demo: No
+  latitude: 20.865318
+  longitude: 84.990644
+  start_time: 2026-09-05T08:18:00+00:00
+  last_seen_time: 2026-09-05T20:46:00+00:00
+  detection_count: 5
+  mean_frp: 2.798
+  max_frp: 6.34
+  mean_brightness: 318.76
+  max_brightness: 332.66
+  persistence_days: 1
+  duration_hours: 12.466666666666667
+  night_fraction: 0.8
+
+Derived historical context
+  recurrence_count: 1
+  historical_baseline_available: No
+  historical_mean_frp: Unavailable
+
+Historical abnormality — interpretation, not a class label
+  abnormality_score: Unavailable
+  abnormality_status: unavailable
+  baseline_available: No
+
+OSM context (distances: metres; missing tags do not establish absence)
+  osm_context_available: No
+  distance_to_industrial_m: Unavailable
+  distance_to_refinery_m: Unavailable
+  distance_to_powerplant_m: Unavailable
+  distance_to_factory_m: Unavailable
+  distance_to_forest_m: Unavailable
+  distance_to_farmland_m: Unavailable
+  distance_to_residential_m: Unavailable
+  nearby_industrial_count: Unavailable
+  nearby_facility_count: Unavailable
+  landuse_class: Unavailable
+  nearby_facility_names: Unavailable (no stored names)
+
+Satellite context (check acquisition time against event time)
+  satellite_context_available: No
+  ndvi: Unavailable
+  acquisition_date: Unavailable
+  land_cover: Unavailable
+
+Decision-support risk — not classification confidence
+  risk_score: 8
+  risk_level: Normal
+
+Evidence checklist:
+[ ] Industrial facility context checked
+[ ] Historical persistence checked
+[ ] Agricultural/vegetation context checked
+[ ] Natural thermal explanation checked
+[ ] Possible false-positive explanation checked
+[ ] External source/reference collected
+[ ] Final class selected by reviewer
+No checklist completion or review approval has been recorded by this summary.
+
+Allowed classes (not recommendations):
+  industrial_fire
+  persistent_industrial_thermal_source
+  agricultural_vegetation_fire
+  natural_thermal_event
+  possible_false_positive
+
+Existing human review fields:
+  split_group: Unavailable
+  label: Unavailable
+  reviewed: false
+  reviewer: Unavailable
+  source_reference: Unavailable
+
+Read-only: candidate CSV was not modified. No label selected.
