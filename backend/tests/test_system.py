@@ -862,6 +862,41 @@ def test_demo_sync_and_fallback(
         c
     )
 
+    # This test must verify deterministic fallback behavior regardless
+    # of whether a real Ollama server is currently running locally.
+    monkeypatch.setattr(
+        main.settings,
+        "ollama_enabled",
+        True,
+    )
+
+    monkeypatch.setattr(
+        main.settings,
+        "ollama_model",
+        "test",
+    )
+
+    original = (
+        httpx.AsyncClient
+    )
+
+    def failure(request):
+        return httpx.Response(
+            503
+        )
+
+    monkeypatch.setattr(
+        main.httpx,
+        "AsyncClient",
+        lambda **kwargs:
+            original(
+                transport=httpx.MockTransport(
+                    failure
+                ),
+                **kwargs,
+            ),
+    )
+
     assert (
         c.post(
             "/api/v1/firms/sync",
@@ -878,6 +913,11 @@ def test_demo_sync_and_fallback(
             "question":
                 "Why is the event risky?"
         },
+    )
+
+    assert (
+        response.status_code
+        == 200
     )
 
     assert (
