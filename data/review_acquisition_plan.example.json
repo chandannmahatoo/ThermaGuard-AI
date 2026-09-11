@@ -1,0 +1,188 @@
+{
+  "target_candidates": 40,
+  "notes": "Search zones only; no region implies any class. Dates depend on FIRMS source availability. Cohort suggestions need human independence checks.",
+  "regions": [
+    {
+      "name": "jamnagar",
+      "bounds": [
+        69.7,
+        22.1,
+        70.5,
+        22.7
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "korba",
+      "bounds": [
+        82.3,
+        22.1,
+        83.0,
+        22.7
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "angul_talcher",
+      "bounds": [
+        84.8,
+        20.7,
+        85.5,
+        21.3
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "chandrapur",
+      "bounds": [
+        79.0,
+        19.6,
+        79.7,
+        20.3
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "punjab_plains",
+      "bounds": [
+        74.5,
+        30.3,
+        76.2,
+        31.7
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "central_madhya_pradesh",
+      "bounds": [
+        77.0,
+        21.8,
+        79.0,
+        23.5
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "hazira",
+      "bounds": [
+        72.5,
+        20.95,
+        72.85,
+        21.25
+      ],
+      "start_date": "2026-09-08",
+      "end_date": "2026-09-08",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "jamnagar",
+      "bounds": [
+        69.7,
+        22.1,
+        70.5,
+        22.7
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "korba",
+      "bounds": [
+        82.3,
+        22.1,
+        83.0,
+        22.7
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "angul_talcher",
+      "bounds": [
+        84.8,
+        20.7,
+        85.5,
+        21.3
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "chandrapur",
+      "bounds": [
+        79.0,
+        19.6,
+        79.7,
+        20.3
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "punjab_plains",
+      "bounds": [
+        74.5,
+        30.3,
+        76.2,
+        31.7
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "central_madhya_pradesh",
+      "bounds": [
+        77.0,
+        21.8,
+        79.0,
+        23.5
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    },
+    {
+      "name": "hazira",
+      "bounds": [
+        72.5,
+        20.95,
+        72.85,
+        21.25
+      ],
+      "start_date": "2026-08-10",
+      "end_date": "2026-08-10",
+      "source": "VIIRS_SNPP_NRT",
+      "max_observations": 100
+    }
+  ]
+}

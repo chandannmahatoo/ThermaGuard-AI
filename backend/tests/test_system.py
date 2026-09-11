@@ -2240,4 +2240,1120 @@ def test_login_throttling(
             },
         ).status_code
         == 200
+    )# ============================================================
+# REVIEW-AND-LABEL WORKFLOW
+# ============================================================
+
+REVIEW_CLASSES = [
+    "industrial_fire",
+    "persistent_industrial_thermal_source",
+    "agricultural_vegetation_fire",
+    "natural_thermal_event",
+    "possible_false_positive",
+]
+
+
+def load_tool(name):
+    """Load a backend/*.py tool script as a module for testing."""
+
+    import importlib.util
+
+    path = (
+        Path(__file__)
+        .resolve()
+        .parents[1]
+        / name
     )
+
+    spec = importlib.util.spec_from_file_location(
+        name.replace(".py", ""),
+        path,
+    )
+
+    module = importlib.util.module_from_spec(
+        spec
+    )
+
+    spec.loader.exec_module(module)
+
+    return module
+
+
+def seed_real_event(
+    factory,
+    event_id="TG-test-real-1",
+):
+    """Insert one real (non-demo) event for exporter tests."""
+
+    payload = {
+        "id": event_id,
+        "is_demo": False,
+        "latitude": 21.1,
+        "longitude": 72.6,
+        "start_time":
+            "2026-09-10T08:24:00+00:00",
+        "last_seen_time":
+            "2026-09-10T08:24:00+00:00",
+        "features": {
+            "mean_frp": 9.9,
+            "max_frp": 16.7,
+        },
+        "context": {
+            "osm_context_available": True,
+            "satellite_context_available":
+                False,
+            "landuse_class": "industrial",
+            "facilities": [
+                {"name": "Plant A"},
+                {"name": None},
+            ],
+        },
+        "history": {},
+        "risk": {
+            "risk_score": 33,
+            "risk_level": "Medium",
+            "abnormality": {
+                "abnormality_score": 70.6,
+                "abnormality_status":
+                    "above_baseline",
+            },
+        },
+    }
+
+    with factory() as db:
+        db.add(
+            Event(
+                id=event_id,
+                is_demo=False,
+                payload=payload,
+            )
+        )
+
+        db.commit()
+
+    return event_id
+
+
+def valid_reviewed_rows(
+    count,
+    groups=10,
+    classes=REVIEW_CLASSES,
+):
+    """Generate complete reviewed rows ready for training."""
+
+    rows = []
+
+    for index in range(count):
+        rows.append(
+            candidate_feature_row(
+                f"e{index}",
+                split_group=(
+                    f"g{index % groups}"
+                ),
+                label=classes[
+                    index % len(classes)
+                ],
+                reviewed="true",
+                reviewer="Dr. Rao",
+                source_reference=(
+                    f"ref.example/{index}"
+                ),
+                mean_frp="5",
+            )
+        )
+
+    return rows
+
+
+def test_exporter_preserves_manual_fields(
+    tmp_path,
+    monkeypatch,
+    client,
+):
+    _, factory = client
+
+    event_id = seed_real_event(factory)
+
+    exporter = load_tool(
+        "export_review_candidates.py"
+    )
+
+    output = tmp_path / "out.csv"
+
+    write_candidates(
+        tmp_path,
+        [
+            candidate_feature_row(
+                event_id,
+                split_group="cohort-a",
+                label="industrial_fire",
+                reviewed="true",
+                reviewer="Dr. Rao",
+                source_reference=(
+                    "news.example/fire-1"
+                ),
+            ),
+        ],
+    ).rename(
+        tmp_path / "out.csv"
+    )
+
+    monkeypatch.setattr(
+        exporter,
+        "OUTPUT",
+        output,
+    )
+
+    monkeypatch.setattr(
+        exporter,
+        "Session",
+        factory,
+    )
+
+    exporter.main()
+
+    with output.open(
+        newline=""
+    ) as file:
+        saved = list(
+            csv.DictReader(file)
+        )
+
+    assert len(saved) == 1
+
+    row = saved[0]
+
+    assert row["event_id"] == event_id
+    assert row["split_group"] == "cohort-a"
+    assert row["label"] == "industrial_fire"
+    assert row["reviewed"] == "true"
+    assert row["reviewer"] == "Dr. Rao"
+    assert (
+        row["source_reference"]
+        == "news.example/fire-1"
+    )
+
+    # Feature columns follow ml.py ordering; assistance
+    # columns carry reviewer context.
+    assert (
+        list(row.keys())
+        == ml.TRAINING_COLUMNS
+        + ml.ASSISTANCE_COLUMNS
+    )
+
+    assert row["mean_frp"] == "9.9"
+    assert row["risk_score"] == "33"
+    assert (
+        row["nearby_facility_names"]
+        == "Plant A"
+    )
+
+    # Determinism: a second export is byte-identical.
+    first = output.read_text()
+
+    exporter.main()
+
+    assert output.read_text() == first
+
+
+def test_exporter_excludes_demo_and_reports_removals(
+    tmp_path,
+    monkeypatch,
+    client,
+    capsys,
+):
+    _, factory = client
+
+    event_id = seed_real_event(factory)
+
+    with factory() as db:
+        demo = db.scalars(
+            select(Event).where(
+                Event.is_demo == True  # noqa: E712
+            )
+        ).first()
+
+        demo_id = demo.id
+
+    exporter = load_tool(
+        "export_review_candidates.py"
+    )
+
+    output = tmp_path / "out.csv"
+
+    write_candidates(
+        tmp_path,
+        [
+            candidate_feature_row(demo_id),
+            candidate_feature_row("TG-stale-1"),
+        ],
+    ).rename(
+        tmp_path / "out.csv"
+    )
+
+    monkeypatch.setattr(
+        exporter,
+        "OUTPUT",
+        output,
+    )
+
+    monkeypatch.setattr(
+        exporter,
+        "Session",
+        factory,
+    )
+
+    exporter.main()
+
+    with output.open(
+        newline=""
+    ) as file:
+        ids = {
+            row["event_id"]
+            for row in csv.DictReader(file)
+        }
+
+    assert ids == {event_id}
+
+    # Demo events are never candidates; removed events
+    # are reported, not silently destroyed.
+    printed = capsys.readouterr().out
+
+    assert "TG-stale-1" in printed
+    assert demo_id not in ids
+
+
+def test_exporter_does_not_duplicate_events(
+    tmp_path,
+    monkeypatch,
+    client,
+):
+    _, factory = client
+
+    seed_real_event(
+        factory,
+        "TG-test-real-2",
+    )
+
+    exporter = load_tool(
+        "export_review_candidates.py"
+    )
+
+    output = tmp_path / "out.csv"
+
+    monkeypatch.setattr(
+        exporter,
+        "OUTPUT",
+        output,
+    )
+
+    monkeypatch.setattr(
+        exporter,
+        "Session",
+        factory,
+    )
+
+    exporter.main()
+    exporter.main()
+
+    lines = (
+        output.read_text()
+        .strip()
+        .splitlines()
+    )
+
+    assert len(lines) == 2  # header + 1 event
+
+
+def test_candidate_validator_detects_duplicates_and_invalid():
+    from app.intelligence import CLASSES
+
+    rows = [
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+        ),
+        # Same event in a different split group.
+        candidate_feature_row(
+            "e1",
+            split_group="g2",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+        ),
+        candidate_feature_row(
+            "e2",
+            label="not_a_class",
+        ),
+        candidate_feature_row(
+            "e3",
+            reviewed="maybe",
+        ),
+    ]
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = write_candidates(
+            Path(folder),
+            rows,
+        )
+
+        report = ml.candidate_report(path)
+
+    problems = "\n".join(
+        report["problems"]
+    )
+
+    assert (
+        "Duplicate event_id: e1"
+        in problems
+    )
+
+    assert (
+        "Event appears in multiple split groups: e1"
+        in problems
+    )
+
+    assert "e2: not_a_class" in problems
+
+    assert (
+        "1 row(s) with invalid reviewed value"
+        in problems
+    )
+
+    assert not report["training_ready"]
+
+
+def test_candidate_validator_demo_reviewed_rejected():
+    import tempfile
+
+    rows = [
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            is_demo="true",
+            mean_frp="5",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    problems = "\n".join(
+        report["problems"]
+    )
+
+    assert (
+        "is_demo=true" in problems
+    )
+
+    assert report["eligible_rows"] == 0
+
+
+def test_candidate_validator_missing_source_reference():
+    import tempfile
+
+    rows = [
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            mean_frp="5",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    problems = "\n".join(
+        report["problems"]
+    )
+
+    assert (
+        "e1: missing source_reference"
+        in problems
+    )
+
+    assert report["eligible_rows"] == 0
+
+
+def test_candidate_unreviewed_and_incomplete_not_eligible():
+    import tempfile
+
+    rows = [
+        # reviewed=false: never eligible, even when complete.
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="false",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+        ),
+        # reviewed=true but split_group missing.
+        candidate_feature_row(
+            "e2",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+        ),
+        # reviewed=true but reviewer missing.
+        candidate_feature_row(
+            "e3",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    assert report["reviewed_rows"] == 2
+
+    assert report["eligible_rows"] == 0
+
+    problems = "\n".join(
+        report["problems"]
+    )
+
+    assert "e2: missing split_group" in problems
+
+    assert "e3: missing reviewer" in problems
+
+
+def test_candidate_validator_missing_feature_columns():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "c.csv"
+
+        path.write_text(
+            "event_id,split_group,label,"
+            "reviewed,reviewer,"
+            "source_reference,is_demo\n"
+        )
+
+        report = ml.candidate_report(
+            path
+        )
+
+    assert (
+        len(
+            report[
+                "feature_columns_missing"
+            ]
+        )
+        == len(FEATURES)
+    )
+
+    problems = "\n".join(
+        report["problems"]
+    )
+
+    assert (
+        "Missing feature columns required by ml.py"
+        in problems
+    )
+
+
+def test_candidate_validator_extra_columns_ignored():
+    import tempfile
+
+    from app.ml import ASSISTANCE_COLUMNS
+
+    rows = valid_reviewed_rows(
+        30,
+        classes=REVIEW_CLASSES,
+    )
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    # Assistance columns are recognized as ignorable
+    # context, never as problems or features.
+    assert (
+        report["extra_columns_ignored"]
+        == ASSISTANCE_COLUMNS
+    )
+
+    assert report["eligible_rows"] == 30
+
+    assert not (
+        set(ASSISTANCE_COLUMNS)
+        & set(FEATURES)
+    )
+
+
+def test_candidate_validator_gate_below_30_rows():
+    import tempfile
+
+    rows = valid_reviewed_rows(
+        29,
+        classes=REVIEW_CLASSES,
+    )
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    assert not report["training_ready"]
+
+    assert (
+        "1 more reviewed events"
+        in report["missing"]
+    )
+
+
+def test_candidate_validator_gate_missing_class():
+    import tempfile
+
+    rows = valid_reviewed_rows(
+        30,
+        classes=REVIEW_CLASSES[:4],
+    )
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    assert not report["training_ready"]
+
+    assert (
+        REVIEW_CLASSES[4]
+        in report["missing"]
+    )
+
+
+def test_candidate_validator_gate_below_10_groups():
+    import tempfile
+
+    rows = valid_reviewed_rows(
+        30,
+        groups=9,
+        classes=REVIEW_CLASSES,
+    )
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    assert not report["training_ready"]
+
+    assert (
+        "1 more independent split groups"
+        in report["missing"]
+    )
+
+
+def test_candidate_validator_valid_dataset_ready():
+    import tempfile
+
+    rows = valid_reviewed_rows(
+        30,
+        classes=REVIEW_CLASSES,
+    )
+
+    with tempfile.TemporaryDirectory() as folder:
+        report = ml.candidate_report(
+            write_candidates(
+                Path(folder),
+                rows,
+            )
+        )
+
+    assert report["training_ready"]
+    assert report["problems"] == []
+    assert report["classes_present"] == 5
+    assert report["split_groups"] == 10
+    assert report["eligible_rows"] == 30
+
+
+def test_finalizer_writes_training_schema():
+    import tempfile
+
+    finalizer = load_tool(
+        "finalize_reviewed_labels.py"
+    )
+
+    rows = valid_reviewed_rows(
+        30,
+        classes=REVIEW_CLASSES,
+    )
+
+    # Unreviewed rows must be filtered out.
+    rows += [
+        candidate_feature_row(
+            "unreviewed-1",
+            label="industrial_fire",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        candidates = write_candidates(
+            Path(folder),
+            rows,
+        )
+
+        output = (
+            Path(folder)
+            / "reviewed_labels.csv"
+        )
+
+        monkeypatch_free = {
+            "CANDIDATES": candidates,
+            "OUTPUT": output,
+        }
+
+        original = {
+            key: getattr(
+                finalizer,
+                key,
+            )
+            for key in monkeypatch_free
+        }
+
+        for key, value in monkeypatch_free.items():
+            setattr(
+                finalizer,
+                key,
+                value,
+            )
+
+        try:
+            finalizer.main()
+        finally:
+            for key, value in original.items():
+                setattr(
+                    finalizer,
+                    key,
+                    value,
+                )
+
+        with output.open(
+            newline=""
+        ) as file:
+            reader = csv.DictReader(file)
+
+            saved = list(reader)
+
+            header = reader.fieldnames
+
+        assert (
+            header == ml.TRAINING_COLUMNS
+        )
+
+        # Assistance columns must not leak into
+        # the published training file.
+        assert (
+            "risk_score" not in header
+        )
+
+        assert (
+            "latitude" not in header
+        )
+
+        assert len(saved) == 30
+
+        assert all(
+            row["reviewed"] == "true"
+            for row in saved
+        )
+
+        assert all(
+            row["event_id"]
+            != "unreviewed-1"
+            for row in saved
+        )
+
+
+def test_finalizer_refuses_incomplete_reviewed_row():
+    import tempfile
+
+    finalizer = load_tool(
+        "finalize_reviewed_labels.py"
+    )
+
+    rows = [
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            # source_reference missing -> refusal
+            mean_frp="5",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        candidates = write_candidates(
+            Path(folder),
+            rows,
+        )
+
+        output = (
+            Path(folder)
+            / "reviewed_labels.csv"
+        )
+
+        original = (
+            finalizer.CANDIDATES,
+            finalizer.OUTPUT,
+        )
+
+        finalizer.CANDIDATES = candidates
+        finalizer.OUTPUT = output
+
+        try:
+            with pytest.raises(
+                SystemExit
+            ) as exit_info:
+                finalizer.main()
+
+            assert (
+                exit_info.value.code == 1
+            )
+        finally:
+            finalizer.CANDIDATES, (
+                finalizer.OUTPUT
+            ) = original
+
+        assert not output.exists()
+
+
+def test_finalizer_refuses_invalid_label_and_demo():
+    import tempfile
+
+    finalizer = load_tool(
+        "finalize_reviewed_labels.py"
+    )
+
+    rows = [
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="not_a_class",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+        ),
+        candidate_feature_row(
+            "e2",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            is_demo="true",
+            mean_frp="5",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        candidates = write_candidates(
+            Path(folder),
+            rows,
+        )
+
+        output = (
+            Path(folder)
+            / "reviewed_labels.csv"
+        )
+
+        original = (
+            finalizer.CANDIDATES,
+            finalizer.OUTPUT,
+        )
+
+        finalizer.CANDIDATES = candidates
+        finalizer.OUTPUT = output
+
+        try:
+            with pytest.raises(
+                SystemExit
+            ):
+                finalizer.main()
+        finally:
+            finalizer.CANDIDATES, (
+                finalizer.OUTPUT
+            ) = original
+
+        assert not output.exists()
+
+
+def test_assistance_columns_never_become_training_features():
+    import tempfile
+
+    from app.ml import ASSISTANCE_COLUMNS
+
+    assert (
+        ml.TRAINING_COLUMNS
+        == ml.REVIEW_META + list(FEATURES)
+    )
+
+    assert not (
+        set(ASSISTANCE_COLUMNS)
+        & set(FEATURES)
+    )
+
+    rows = [
+        candidate_feature_row(
+            "e1",
+            split_group="g1",
+            label="industrial_fire",
+            reviewed="true",
+            reviewer="r",
+            source_reference="https://example.org/evidence/record-1",
+            mean_frp="5",
+            # Decoy values in assistance columns.
+            risk_score="99999",
+            latitude="999",
+        ),
+    ]
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = write_candidates(
+            Path(folder),
+            rows,
+        )
+
+        eligible = ml.dataset(path)
+
+    assert len(eligible) == 1
+
+    vector = features(eligible[0])
+
+    assert len(vector) == len(FEATURES)
+
+    assert vector[
+        FEATURES.index("mean_frp")
+    ] == 5.0
+
+    # Neither decoy value appears anywhere in the
+    # training vector.
+    assert 99999.0 not in vector
+    assert 999.0 not in vector
+
+
+def test_review_endpoints_readonly_and_scoped(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    import tempfile
+
+    c, _ = client
+
+    admin_headers = auth(c)
+
+    operator_headers = auth(c, True)
+
+    # Review readiness is open to authenticated users.
+    monkeypatch.setattr(
+        ml,
+        "CANDIDATES",
+        tmp_path / "missing.csv",
+    )
+
+    response = c.get(
+        "/api/v1/model/review-readiness",
+        headers=operator_headers,
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body[
+        "candidates_file"
+    ] is False
+
+    assert (
+        body["training_ready"] is False
+    )
+
+    # Candidate export is admin-only.
+    assert (
+        c.get(
+            "/api/v1/model/review-candidates",
+            headers=operator_headers,
+        ).status_code
+        == 403
+    )
+
+    assert (
+        c.get(
+            "/api/v1/model/review-candidates",
+            headers=admin_headers,
+        ).status_code
+        == 404
+    )
+
+    with tempfile.TemporaryDirectory() as folder:
+        candidates = write_candidates(
+            Path(folder),
+            [
+                candidate_feature_row(
+                    "TG-e1"
+                ),
+            ],
+        )
+
+        monkeypatch.setattr(
+            ml,
+            "CANDIDATES",
+            candidates,
+        )
+
+        response = c.get(
+            "/api/v1/model/review-candidates",
+            headers=admin_headers,
+        )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["count"] == 1
+
+    assert (
+        body["candidates"][0]["event_id"]
+        == "TG-e1"
+    )
+
+
+def candidate_csv(
+    rows,
+    include_assistance=True,
+):
+    """Build candidate CSV text with the exact exporter schema."""
+
+    from app.ml import (
+        REVIEW_META,
+        ASSISTANCE_COLUMNS,
+    )
+
+    import io
+
+    columns = (
+        REVIEW_META
+        + list(FEATURES)
+        + (
+            ASSISTANCE_COLUMNS
+            if include_assistance
+            else []
+        )
+    )
+
+    buffer = io.StringIO()
+
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=columns,
+        extrasaction="ignore",
+    )
+
+    writer.writeheader()
+
+    base = {
+        column: ""
+        for column in columns
+    }
+
+    for row in rows:
+        item = {
+            **base,
+            **row,
+        }
+
+        writer.writerow(item)
+
+    return buffer.getvalue()
+
+
+def write_candidates(
+    tmp_path,
+    rows,
+    include_assistance=True,
+):
+    path = tmp_path / "candidates.csv"
+
+    path.write_text(
+        candidate_csv(
+            rows,
+            include_assistance,
+        )
+    )
+
+    return path
+
+
+def candidate_feature_row(
+    event_id,
+    **overrides,
+):
+    """Minimal event row; every feature empty means imputation."""
+
+    return {
+        "event_id": event_id,
+        "split_group": "",
+        "label": "",
+        "reviewed": "false",
+        "reviewer": "",
+        "source_reference": "",
+        "is_demo": "false",
+        **overrides,
+    }
