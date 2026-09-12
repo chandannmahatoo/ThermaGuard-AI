@@ -1,5 +1,5 @@
 'use client';
-import React, { FormEvent, useEffect, useRef } from 'react';
+import React, { FormEvent, useEffect, useRef, useState } from 'react';
 import {
   Sparkles,
   X,
@@ -11,6 +11,7 @@ import {
   Layers,
   MapPin,
 } from 'lucide-react';
+import {useDialogFocus} from '../lib/useDialogFocus';
 import type { ThermalEvent } from '../lib/api';
 
 type CopilotModalProps = {
@@ -38,21 +39,10 @@ export default function CopilotModal({
   onAsk,
   onSelectSuggestedQuestion,
 }: CopilotModalProps) {
+  const [copyState,setCopyState] = useState('Copy response');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const dialogRef = useDialogFocus<HTMLDivElement>(isOpen);
 
   if (!isOpen) return null;
 
@@ -66,17 +56,13 @@ export default function CopilotModal({
         'Is there nearby industrial infrastructure or OSM context?',
         'Summarize satellite sensor sources and cross-confirmation.',
       ]
-    : [
-        'Summarize the highest risk thermal anomalies currently monitored.',
-        'Which events have cross-sensor satellite confirmation?',
-        'What industrial activity is detected near active hotspots?',
-        'Explain how the deterministic risk engine scores events.',
-      ];
+    : [];
 
   return (
     <div className="copilot-backdrop" onClick={onClose}>
       <div
         className="copilot-dialog"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="ThermaGuard AI Copilot"
@@ -92,7 +78,7 @@ export default function CopilotModal({
               <h2>ThermaGuard AI Copilot</h2>
               <span className="copilot-subtext">
                 {selected
-                  ? `Target: Event ${selected.id.slice(0, 16)}… (${selected.risk?.risk_level || 'Risk'} · ${selected.mean_frp?.toFixed(1) || '0'} MW)`
+                  ? `Target: Event ${selected.id.slice(0, 16)}… (${selected.risk?.risk_level || 'Risk'} · ${selected.mean_frp?.toFixed(1) || 'Unavailable'} MW)`
                   : 'Scope: Top active thermal anomalies in workspace'}
               </span>
             </div>
@@ -136,13 +122,13 @@ export default function CopilotModal({
         {/* Answer Display Area */}
         <div className="copilot-conversation-area">
           {chatBusy ? (
-            <div className="copilot-busy-state">
+            <div className="copilot-busy-state" role="status" aria-live="polite">
               <Sparkles size={22} className="spin text-teal" />
               <p>Grounding query against verified event evidence…</p>
             </div>
           ) : answer ? (
             <div className="copilot-answer-rendered">
-              <div className="copilot-answer-bubble">{answer}</div>
+              <div className="copilot-answer-bubble">{answer}</div><button className="button" onClick={async()=>{try{await navigator.clipboard.writeText(answer);setCopyState('Copied')}catch{setCopyState('Copy unavailable')}}}>{copyState}</button>
               {isFallback && (
                 <div className="copilot-fallback-banner">
                   <AlertTriangle size={13} />
@@ -192,12 +178,12 @@ export default function CopilotModal({
             }
             required
             maxLength={1000}
-            disabled={chatBusy}
+            disabled={chatBusy || !selected}
           />
           <button
             type="submit"
             className="primary copilot-send-button"
-            disabled={chatBusy || !question.trim()}
+            disabled={chatBusy || !question.trim() || !selected}
             aria-label="Send query to copilot"
           >
             <Send size={16} />

@@ -18,10 +18,15 @@ import {
   Shield,
   BarChart3,
 } from 'lucide-react';
-import type { TrendPoint, ThermalEvent } from '../lib/api';
+import type { TrendPoint, ThermalEvent, Alert, ProviderStatusResponse } from '../lib/api';
+import {EmptyState,StatRow,useReducedMotion} from './UI';
+import {ProviderBadge} from './StatusBadge';
 import { RiskBadge } from './StatusBadge';
 
 type AnalyticsViewProps = {
+  alerts?: Alert[];
+  providers?: ProviderStatusResponse|null;
+  reviewedCount?: number;
   trends: TrendPoint[];
   trendsAvailable: boolean;
   trendsReason: string;
@@ -33,6 +38,7 @@ type AnalyticsViewProps = {
 };
 
 export default function AnalyticsView({
+  alerts=[],providers,reviewedCount,
   trends,
   trendsAvailable,
   trendsReason,
@@ -42,6 +48,7 @@ export default function AnalyticsView({
   events,
   demo,
 }: AnalyticsViewProps) {
+  const reducedMotion=useReducedMotion();
   // Classification breakdown
   const classCounts: Record<string, number> = {};
   events.forEach((e) => {
@@ -81,16 +88,7 @@ export default function AnalyticsView({
           </div>
           <div className="analytics-window-select">
             <Clock size={14} className="text-muted" />
-            <select
-              aria-label="Analytics period"
-              value={days}
-              onChange={(e) => setDays(e.target.value)}
-            >
-              <option value="1">24 Hours</option>
-              <option value="7">7 Days</option>
-              <option value="30">30 Days</option>
-              <option value="365">365 Days</option>
-            </select>
+            <div className="segmented-control" role="group" aria-label="Analytics period">{[['1','24h'],['7','7d'],['30','30d'],['365','365d']].map(([value,label])=><button type="button" key={value} aria-pressed={days===value} onClick={()=>setDays(value)}>{label}</button>)}</div>
           </div>
         </div>
 
@@ -125,12 +123,12 @@ export default function AnalyticsView({
                       labelStyle={{ color: '#94a3b8', fontWeight: 600 }}
                       formatter={(val: any) => [`${val ?? 0} events`, 'Detected Events']}
                     />
-                    <Bar dataKey="events" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                    <Bar isAnimationActive={!reducedMotion} animationDuration={220} dataKey="events" fill="#0d9488" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <p className="empty">No observations recorded in this period.</p>
+              <EmptyState title="No observations recorded" description="No observations recorded in this period. Choose another time window."/>
             )
           ) : (
             <div className="chart-insufficient-history">
@@ -144,6 +142,7 @@ export default function AnalyticsView({
         </div>
       </section>
 
+      <section className="analytics-subpanel audit-panel"><h3>Review &amp; delivery audit</h3><div className="audit-tiles"><StatRow label="Reviewed candidates" value={reviewedCount ?? 'Unavailable'}/><StatRow label="Stored alerts" value={alerts.length}/>{['sent','pending','failed','skipped'].map(status=><StatRow key={status} label={`Delivery ${status}`} value={alerts.some(a=>Array.isArray(a.delivery)) ? alerts.reduce((n,a)=>n+(a.delivery?.filter(d=>d.status===status).length || 0),0) : 'Unavailable'}/>)}</div><h4>Provider health</h4><div className="provider-status-list">{providers ? Object.entries(providers.providers).map(([name,p])=><div key={name}><span>{name.replaceAll('_',' ')}</span><ProviderBadge state={p.status}/></div>) : <p>Telemetry unavailable</p>}</div></section>
       {/* Grid of Analytical Breakdowns */}
       <div className="analytics-breakdowns-grid">
         {/* Risk Distribution */}

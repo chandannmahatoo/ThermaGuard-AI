@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const leafletMock = {
   MapContainer: ({ children }) => React.createElement('div', { className: 'mapcontainer' }, children),
   TileLayer: () => React.createElement('div'),
+  Circle: ({ children, radius }) => React.createElement('div', { 'data-meters': radius }, children),
   CircleMarker: ({ children, center, radius }) =>
     React.createElement('div', { 'data-center': String(center), 'data-radius': radius }, children),
   Polyline: () => React.createElement('div', { className: 'polyline' }),
@@ -23,6 +24,11 @@ function loadTsx(path, sandbox = {}) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   const exports = {};
   const req = (name) => {
+    if (name === '../lib/pushNotifications') return {registerBrowserPush:()=>assert.fail('SSR must not register push')};
+    if (name === '../lib/api') return {getStoredToken:()=>''};
+    if (name === './UI') return loadTsx('../components/UI.tsx');
+    if (name === '../lib/useDialogFocus') return loadTsx('../lib/useDialogFocus.ts');
+    if (name === './ContextCoverage') return loadTsx('../components/ContextCoverage.tsx');
     if (name === 'react-leaflet') return leafletMock;
     if (name === './StatusBadge' || name === '../components/StatusBadge') {
       return loadTsx('../components/StatusBadge.tsx', sandbox);
@@ -123,11 +129,10 @@ test('OverviewKPIs renders real values, context coverage, and cross-sensor count
       demo: false,
     })
   );
-  assert.match(html, /Active Monitored Events/);
+  assert.match(html, /Monitored Events/);
   assert.match(html, />01</);
   assert.match(html, /Critical Events/);
-  assert.match(html, /Mean Radiative Power/);
-  assert.match(html, /45\.2/);
+  assert.match(html, /High-Risk Events/);
   assert.match(html, /Cross-Sensor Events/);
   assert.match(html, /Context Coverage/);
   assert.match(html, /100%/);

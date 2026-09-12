@@ -45,13 +45,69 @@ export type EventRisk = {
   abnormality: Abnormality;
 };
 
+export type ProviderContextStatus =
+  | 'available'
+  | 'unavailable'
+  | 'failed'
+  | 'deferred';
+
 export type ProviderContext = {
-  status: 'available' | 'unavailable' | 'failed' | 'deferred';
+  status: ProviderContextStatus;
   provider: string;
   fetched_at?: string;
-  reason?: string;
+  reason?: string | null;
+  version?: number;
+
+  refresh_status?: string;
+  refresh_reason?: string | null;
+  signature?: unknown[];
+
+  // Reverse geocoding
   display_name?: string;
-  geometry?: {type: 'LineString'; coordinates: [number,number][]};
+  city?: string | null;
+  district?: string | null;
+  state?: string | null;
+  country?: string | null;
+  country_code?: string | null;
+
+  // Weather
+  temperature_c?: number | null;
+  relative_humidity_percent?: number | null;
+  precipitation_mm?: number | null;
+  wind_speed_kmh?: number | null;
+  wind_direction_deg?: number | null;
+  weather_dataset?: string;
+
+  // Air quality
+  pm2_5?: number | null;
+  pm10?: number | null;
+  carbon_monoxide?: number | null;
+  nitrogen_dioxide?: number | null;
+  ozone?: number | null;
+  air_quality_dataset?: string;
+  units?: string;
+
+  // Shared provider metadata
+  observed_at?: string;
+  data_kind?: string;
+  attribution?: string;
+
+  // EONET
+  matched?: boolean;
+  event_id?: string;
+  title?: string;
+  category?: string;
+  distance_km?: number;
+  event_date?: string;
+
+  // Routing
+  distance_m?: number;
+  duration_seconds?: number;
+  geometry?: {
+    type: 'LineString';
+    coordinates: [number, number][];
+  };
+
   [key: string]: unknown;
 };
 
@@ -61,9 +117,12 @@ export type EventContext = {
   location?: ProviderContext;
   eonet?: ProviderContext;
   routing?: ProviderContext;
+
   osm_context_available?: boolean;
   osm_reason?: string;
   satellite_context_available?: boolean;
+  satellite_refresh_status?: string;
+  satellite_refresh_reason?: string;
   ndvi?: number | null;
   land_cover?: string | null;
   vegetation_fraction?: number | null;
@@ -78,10 +137,23 @@ export type EventContext = {
   distance_to_industrial_m?: number | null;
   distance_to_residential_m?: number | null;
   nearby_facility_names?: string[];
+
   [key: string]: unknown;
 };
 
+export type EventContextRefreshResponse = {
+  event_id: string;
+  context: EventContext;
+  providers: {
+    weather: ProviderContextStatus | string;
+    air_quality: ProviderContextStatus | string;
+    location: ProviderContextStatus | string;
+  };
+};
+
 export type ThermalEvent = {
+  // Frontend annotation from the read-only candidate export; not a model label.
+  review_status?: string;
   source_counts?: Record<string, number>;
   sensor_summary?: Record<string, number | boolean | null>;
   id: string;
@@ -335,6 +407,19 @@ export function apiGet<T>(path: string, token?: string, timeoutMs?: number): Pro
 
 export function apiPost<T>(path: string, body: unknown, token?: string, timeoutMs?: number): Promise<T> {
   return request<T>(path, { method: 'POST', token, body: body ?? {}, timeoutMs });
+}
+
+export function refreshEventContext(
+  eventId: string,
+  token: string,
+  timeoutMs = 65000,
+): Promise<EventContextRefreshResponse> {
+  return apiPost<EventContextRefreshResponse>(
+    '/events/' + encodeURIComponent(eventId) + '/context/refresh',
+    {},
+    token,
+    timeoutMs,
+  );
 }
 
 export function apiPut<T>(path: string, body: unknown, token?: string, timeoutMs?: number): Promise<T> {

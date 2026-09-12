@@ -136,6 +136,7 @@ const mapStatusToReadiness = (state: string): SystemReadinessState => {
       return 'REAL';
     case 'disabled':
       return 'UNAVAILABLE';
+    case 'blocked':
     case 'not_configured':
     case 'failed':
       return 'BLOCKED';
@@ -188,7 +189,7 @@ export default function ProviderHealthGrid({
       <div className="provider-cards-grid">
         {PROVIDER_METADATA.map((meta) => {
           const entry: ProviderHealthEntry | undefined = providerHealth?.providers?.[meta.key];
-          const state = (entry?.status || 'configured') as string;
+          const state = (entry?.status || 'unavailable') as string;
           const Icon = meta.icon;
           const readiness = mapStatusToReadiness(state);
 
@@ -205,7 +206,7 @@ export default function ProviderHealthGrid({
                   </div>
                 </div>
                 <div className="provider-badges-col">
-                  <StatusBadge state={readiness} />
+
                   <ProviderBadge state={state} />
                 </div>
               </div>
@@ -216,7 +217,7 @@ export default function ProviderHealthGrid({
                 {entry ? (
                   <dl className="provider-telemetry-dl">
                     <div>
-                      <dt>Latency</dt>
+                      <dt>Enabled / configured</dt><dd>{['healthy', 'configured', 'degraded', 'failed'].includes(state) ? 'Yes / Yes' : state === 'disabled' ? 'No / Unknown' : state === 'not_configured' ? 'Unknown / No' : 'Unknown / Unknown'}</dd></div><div><dt>Interaction</dt><dd>{entry.last_success || entry.last_failure ? 'Recorded in this process' : 'No interaction recorded'}</dd></div><div><dt>Latency</dt>
                       <dd>{entry.last_latency_ms != null ? `${entry.last_latency_ms} ms` : '—'}</dd>
                     </div>
                     <div>
@@ -235,7 +236,7 @@ export default function ProviderHealthGrid({
                   </dl>
                 ) : (
                   <p className="provider-no-interaction small">
-                    no interaction recorded
+                    Telemetry unavailable · no interaction recorded
                   </p>
                 )}
               </div>
@@ -244,7 +245,7 @@ export default function ProviderHealthGrid({
         })}
       </div>
 
-      <div className="providers-footer-note">
+      <div className="providers-footer-note"><p>Configured: ready, with no recorded success. Healthy: a live success is recorded. Degraded: the latest interaction failed after a prior success. Failed: no retained success after failure. Blocked: a provider restriction prevents use. Missing telemetry does not establish configuration or health.</p>
         <p className="small">
           Zero ingested observations during FIRMS synchronization is normal when no new detections occur within the satellite query window. Real ingestion is isolated from demo fixtures; provider credentials never touch client browsers.
         </p>

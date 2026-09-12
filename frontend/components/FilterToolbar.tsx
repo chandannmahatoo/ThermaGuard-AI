@@ -4,6 +4,11 @@ import { Search, X, Filter, RotateCcw, MapPin } from 'lucide-react';
 import type { AreaResult } from '../lib/api';
 
 type FilterToolbarProps = {
+  reviewFilter?: string;
+  setReviewFilter?: (v:string)=>void;
+  classification?: string;
+  setClassification?: (v:string)=>void;
+  classifications?: string[];
   search: string;
   setSearch: (v: string) => void;
   filter: string;
@@ -27,6 +32,8 @@ type FilterToolbarProps = {
 };
 
 export default function FilterToolbar({
+  reviewFilter = 'All reviews', setReviewFilter,
+  classification = 'All classes', setClassification, classifications = [],
   search,
   setSearch,
   filter,
@@ -54,9 +61,12 @@ export default function FilterToolbar({
     (dateFilter !== 'All time' ? 1 : 0) +
     (contextFilter !== 'All events' ? 1 : 0) +
     (area ? 1 : 0) +
-    (search.trim() ? 1 : 0);
+    (search.trim() ? 1 : 0) + (classification !== 'All classes' ? 1 : 0) + (reviewFilter !== 'All reviews' ? 1 : 0);
 
   function resetAll() {
+    setReviewFilter?.('All reviews');
+    setClassification?.('All classes');
+    setAreaQuery('');
     setSearch('');
     setFilter('All risk levels');
     setSourceFilter('All sensors');
@@ -91,6 +101,8 @@ export default function FilterToolbar({
           )}
         </div>
 
+        {setClassification && <select aria-label="Classification filter" value={classification} onChange={e=>setClassification(e.target.value)}><option>All classes</option>{classifications.map(c=><option key={c} value={c}>{c.replaceAll('_',' ')}</option>)}</select>}
+<select aria-label="Review status filter" value={reviewFilter} onChange={e=>setReviewFilter?.(e.target.value)}><option>All reviews</option><option>Reviewed candidate</option><option>Pending candidate</option><option>Unavailable</option></select>
         {/* Risk filter */}
         <div className="filter-select-group">
           <select
@@ -166,6 +178,7 @@ export default function FilterToolbar({
         )}
       </div>
 
+      <div className="filter-chips">{[[reviewFilter!=='All reviews'?reviewFilter:'',()=>setReviewFilter?.('All reviews')],[search,()=>setSearch('')],[filter!=='All risk levels'?filter:'',()=>setFilter('All risk levels')],[sourceFilter!=='All sensors'?sourceFilter:'',()=>setSourceFilter('All sensors')],[dateFilter!=='All time'?dateFilter:'',()=>setDateFilter('All time')],[contextFilter!=='All events'?contextFilter:'',()=>setContextFilter('All events')],[classification!=='All classes'?classification:'',()=>setClassification?.('All classes')]].map(([text,clear],i)=>text ? <button className="button" key={i} type="button" onClick={clear as ()=>void} aria-label={`Remove ${text} filter`}>{String(text)} ×</button>:null)}</div>
       {/* Area Search Sub-bar */}
       <form className="filter-area-bar" onSubmit={findArea}>
         <div className="filter-area-input-wrap">

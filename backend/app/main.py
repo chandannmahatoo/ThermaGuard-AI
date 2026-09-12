@@ -747,6 +747,10 @@ app.add_middleware(
     allow_methods=[
         "GET",
         "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS",
     ],
     allow_headers=[
         "Authorization",
@@ -1629,6 +1633,134 @@ def detail(
 
 
 # ============================================================
+# ON-DEMAND EVENT CONTEXT REFRESH
+# ============================================================
+
+@app.post(
+    "/api/v1/events/{event_id}/context/refresh"
+)
+async def refresh_event_context(
+    event_id: str,
+    user=Depends(current),
+    db=Depends(get_db),
+):
+    """Refresh lightweight external context for one visible event.
+
+    Refreshes weather, air quality, reverse-geocoded location, and
+    NASA EONET natural-hazard context for the selected event only.
+
+    It deliberately does not modify FIRMS detections, clustering, OSM,
+    satellite context, classification, risk, alerts, or review labels.
+    """
+
+    # Load through the existing authorization boundary, then detach the
+    # payload before making any external network requests.
+    snapshot = deepcopy(get_event(event_id, db, user))
+    db.rollback()
+
+    if snapshot.get("is_demo"):
+        raise HTTPException(
+            status_code=409,
+            detail="External context refresh is unavailable for demo events",
+        )
+
+    event = deepcopy(snapshot)
+    context = deepcopy(event.get("context") or {})
+
+    previous_weather = (
+        context.get("weather")
+        if isinstance(context.get("weather"), dict)
+        else None
+    )
+    previous_air_quality = (
+        context.get("air_quality")
+        if isinstance(context.get("air_quality"), dict)
+        else None
+    )
+    previous_location = (
+        context.get("location")
+        if isinstance(context.get("location"), dict)
+        else None
+    )
+    previous_eonet = (
+        context.get("eonet")
+        if isinstance(context.get("eonet"), dict)
+        else None
+    )
+
+    try:
+        weather, air_quality, location, eonet = await asyncio.gather(
+            providers.fetch_weather_context(event, previous_weather),
+            providers.fetch_air_quality_context(event, previous_air_quality),
+            providers.reverse_geocode_event(event, previous_location),
+            providers.fetch_eonet_context(event, previous_eonet),
+        )
+    except (
+        httpx.HTTPError,
+        TimeoutError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="External context provider temporarily unavailable",
+        ) from None
+
+    context["weather"] = weather
+    context["air_quality"] = air_quality
+    context["location"] = location
+    context["eonet"] = eonet
+    event["context"] = context
+
+    try:
+        # Match the ingestion pipeline's SQLite single-writer strategy.
+        if db.get_bind().dialect.name == "sqlite":
+            db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+
+        stored = db.get(Event, event_id)
+
+        if stored is None or stored.is_demo != settings.demo_mode:
+            db.rollback()
+            raise HTTPException(404, "Event not found")
+
+        # Do not overwrite a newer event version produced by a concurrent
+        # FIRMS sync or another update while provider calls were in flight.
+        if stored.payload != snapshot:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Event changed during context refresh; retry the request",
+            )
+
+        stored.payload = event
+        db.commit()
+
+    except HTTPException:
+        raise
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily busy; retry context refresh",
+        ) from None
+    except BaseException:
+        db.rollback()
+        raise
+
+    return {
+        "event_id": event_id,
+        "context": context,
+        "providers": {
+            "weather": weather.get("status", "unavailable"),
+            "air_quality": air_quality.get("status", "unavailable"),
+            "location": location.get("status", "unavailable"),
+            "eonet": eonet.get("status", "unavailable"),
+        },
+    }
+
+
+# ============================================================
 # EVIDENCE
 # ============================================================
 
@@ -2140,9 +2272,15 @@ def metrics(
     user=Depends(current),
 ):
     if ml.META.exists():
-        return json.loads(
-            ml.META.read_text()
-        )
+        try:
+            return json.loads(
+                ml.META.read_text()
+            )
+        except (OSError, json.JSONDecodeError):
+            return {
+                "available": False,
+                "reason": "Model metadata is unavailable or invalid",
+            }
 
     return {
         "available":
@@ -2353,7 +2491,14 @@ def add_organization(
         item
     )
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Organization already exists or violates a uniqueness constraint",
+        ) from None
 
     return {
         "id":
@@ -2676,7 +2821,7 @@ async def chat(
                 f"{event['risk']['risk_score']}/100 "
                 f"({event['risk']['risk_level']}). "
                 f"Classification: "
-                f"{event['classification']['predicted_class'] or 'unavailable; no trained model'}. "
+                f"{event['classification']['predicted_class'] or 'unavailable for this event'}. "
                 f"Historical baseline: "
                 f"{'available' if event['risk']['abnormality']['baseline_available'] else 'unavailable'}. "
                 f"Review source evidence before taking action."
@@ -2979,14 +3124,35 @@ async def event_route(event_id:str,body:RouteInput,user=Depends(current),db=Depe
     event=deepcopy(get_event(event_id,db,user))
     snapshot=deepcopy(event)
     db.rollback()
-    packet=await providers.fetch_route_context(event,[body.longitude,body.latitude],event.get('context',{}).get('routing'))
-    # On-demand destination avoids inventing a response facility. Brief optimistic write.
-    saved=db.get(Event,event_id)
-    if saved is not None and saved.payload==snapshot:
-        payload=deepcopy(saved.payload)
-        payload.setdefault('context',{})['routing']=packet
-        saved.payload=payload;db.commit()
-    else:db.rollback()
+
+    try:
+        packet=await providers.fetch_route_context(
+            event,
+            [body.longitude,body.latitude],
+            event.get('context',{}).get('routing'),
+        )
+    except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError):
+        raise HTTPException(
+            503,
+            'Routing provider temporarily unavailable',
+        ) from None
+
+    # On-demand destination avoids inventing a response facility.
+    # Persistence is best-effort so a valid route response is not lost
+    # merely because SQLite was briefly busy or the event changed.
+    try:
+        saved=db.get(Event,event_id)
+        if saved is not None and saved.payload==snapshot:
+            payload=deepcopy(saved.payload)
+            payload.setdefault('context',{})['routing']=packet
+            saved.payload=payload
+            db.commit()
+        else:
+            db.rollback()
+    except OperationalError:
+        db.rollback()
+        logger.warning('routing context persistence temporarily unavailable')
+
     return packet
 
 
@@ -3011,5 +3177,10 @@ def provider_status(user=Depends(current),db=Depends(get_db)):
 async def eonet_events(user=Depends(current),db=Depends(get_db)):
     """Current open NASA EONET hazards for the map layer (live, read-only)."""
     db.rollback()
-    result=await providers.eonet_active_events()
-    return result
+    try:
+        return await providers.eonet_active_events()
+    except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError):
+        raise HTTPException(
+            503,
+            'NASA EONET temporarily unavailable',
+        ) from None

@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, FormEvent } from 'react';
+import { registerBrowserPush } from '../lib/pushNotifications';
 import {
   Bell,
   Mail,
@@ -12,9 +13,15 @@ import {
   Sliders,
   CheckCircle2,
 } from 'lucide-react';
-import type { NotificationPreferences, Organization, Assignment } from '../lib/api';
+import {
+  getStoredToken,
+  type NotificationPreferences,
+  type Organization,
+  type Assignment,
+} from '../lib/api';
 
 type NotificationSettingsProps = {
+  authToken?: string;
   notif: NotificationPreferences | null;
   notifBusy: boolean;
   onSaveNotif: (next: NotificationPreferences) => void;
@@ -34,7 +41,7 @@ type NotificationFormState = {
   alert_radius_km: number;
 };
 
-function normalizeFormState(raw: NotificationPreferences | null): NotificationFormState | null {
+export function normalizeFormState(raw: NotificationPreferences | null): NotificationFormState | null {
   if (!raw) return null;
   return {
     notifications_enabled: Boolean(raw.notifications_enabled),
@@ -45,6 +52,7 @@ function normalizeFormState(raw: NotificationPreferences | null): NotificationFo
 }
 
 export default function NotificationSettings({
+  authToken: sessionToken,
   notif,
   notifBusy,
   onSaveNotif,
@@ -57,7 +65,7 @@ export default function NotificationSettings({
   onAssignUser,
 }: NotificationSettingsProps) {
   const [formState, setFormState] = useState<NotificationFormState | null>(() => normalizeFormState(notif));
-  const [thresholdInput, setThresholdInput] = useState('80');
+  const [thresholdInput, setThresholdInput] = useState('');
   const [orgName, setOrgName] = useState('');
   const [orgEmail, setOrgEmail] = useState('');
   const [areaOrgId, setAreaOrgId] = useState('');
@@ -66,6 +74,9 @@ export default function NotificationSettings({
   const [userEmail, setUserEmail] = useState('');
   const [userOrgId, setUserOrgId] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushStatus, setPushStatus] = useState('');
 
   // Sync state when props change
   React.useEffect(() => {
@@ -104,12 +115,51 @@ export default function NotificationSettings({
     if (formState) {
       const parsedLat = formState.latitude.trim() === '' ? null : Number(formState.latitude);
       const parsedLon = formState.longitude.trim() === '' ? null : Number(formState.longitude);
+      if ((parsedLat !== null && (!Number.isFinite(parsedLat) || Math.abs(parsedLat)>90)) || (parsedLon !== null && (!Number.isFinite(parsedLon) || Math.abs(parsedLon)>180)) || (formState.notifications_enabled && (parsedLat === null || parsedLon === null))) {setValidationError('Enter valid latitude and longitude before enabling notifications.');return;}
+      setValidationError('');
       onSaveNotif({
         notifications_enabled: formState.notifications_enabled,
         latitude: parsedLat !== null && !Number.isNaN(parsedLat) ? parsedLat : null,
         longitude: parsedLon !== null && !Number.isNaN(parsedLon) ? parsedLon : null,
         alert_radius_km: typeof formState.alert_radius_km === 'number' && !Number.isNaN(formState.alert_radius_km) ? formState.alert_radius_km : 10,
       });
+    }
+  }
+
+  async function handleEnableBrowserPush() {
+    if (pushBusy || notifBusy) return;
+
+    setPushStatus('');
+
+    if (!notif?.notifications_enabled) {
+      setPushStatus(
+        'Enable notifications and save your notification preferences before registering this browser.',
+      );
+      return;
+    }
+
+    const authToken = sessionToken || getStoredToken();
+
+    if (!authToken) {
+      setPushStatus('Your session is unavailable. Sign in again and retry.');
+      return;
+    }
+
+    setPushBusy(true);
+
+    try {
+      await registerBrowserPush(notif.notifications_enabled, authToken);
+
+      setPushStatus('Browser push notifications are enabled for this device.');
+    } catch (error) {
+
+      setPushStatus(
+        error instanceof Error
+          ? error.message
+          : 'Could not enable browser push notifications.',
+      );
+    } finally {
+      setPushBusy(false);
     }
   }
 
@@ -137,6 +187,7 @@ export default function NotificationSettings({
           </div>
         </div>
 
+        {validationError && <p role="alert">{validationError}</p>}
         {formState ? (
           <div className="settings-form-grid">
             <div className="settings-toggle-card">
@@ -144,7 +195,7 @@ export default function NotificationSettings({
                 <input
                   type="checkbox"
                   checked={formState.notifications_enabled}
-                  disabled={notifBusy}
+                  disabled={notifBusy || pushBusy}
                   onChange={(e) =>
                     setFormState({ ...formState, notifications_enabled: e.target.checked })
                   }
@@ -156,7 +207,7 @@ export default function NotificationSettings({
               </label>
               <p className="small text-muted">
                 {formState.notifications_enabled
-                  ? 'Active: you will receive alerts when events cross threshold inside your radius.'
+                  ? 'Subscribed: delivery depends on enabled server channels and registered devices.'
                   : 'Inactive: no automated notifications will be dispatched.'}
               </p>
             </div>
@@ -170,7 +221,7 @@ export default function NotificationSettings({
                   max={500}
                   step={1}
                   value={formState.alert_radius_km}
-                  disabled={notifBusy}
+                  disabled={notifBusy || pushBusy}
                   onChange={(e) =>
                     setFormState({
                       ...formState,
@@ -192,7 +243,7 @@ export default function NotificationSettings({
                     max={90}
                     step="any"
                     value={formState.latitude}
-                    disabled={notifBusy}
+                    disabled={notifBusy || pushBusy}
                     onChange={(e) =>
                       setFormState({
                         ...formState,
@@ -213,7 +264,7 @@ export default function NotificationSettings({
                     max={180}
                     step="any"
                     value={formState.longitude}
-                    disabled={notifBusy}
+                    disabled={notifBusy || pushBusy}
                     onChange={(e) =>
                       setFormState({
                         ...formState,
@@ -229,7 +280,7 @@ export default function NotificationSettings({
                 type="button"
                 className="button coord-geolocate-btn"
                 onClick={handleUseBrowserLocation}
-                disabled={notifBusy}
+                disabled={notifBusy || pushBusy}
                 title="Acquire coordinates from browser GPS"
               >
                 <Compass size={15} />
@@ -241,12 +292,41 @@ export default function NotificationSettings({
               <button
                 type="button"
                 className="primary settings-save-btn"
-                disabled={notifBusy}
+                disabled={notifBusy || pushBusy}
                 onClick={handleSavePreferences}
               >
                 <Save size={16} />
                 {notifBusy ? 'Saving…' : 'Save Notification Preferences'}
               </button>
+              <button
+                type="button"
+                className="button"
+                disabled={notifBusy || pushBusy || !notif?.notifications_enabled}
+                onClick={handleEnableBrowserPush}
+                title={
+                  notif?.notifications_enabled
+                    ? 'Register this browser for Firebase Cloud Messaging'
+                    : 'Enable and save notification preferences first'
+                }
+              >
+                <Smartphone size={16} />
+                {pushBusy ? 'Enabling Push…' : 'Enable Browser Push'}
+              </button>
+
+              {pushStatus ? (
+                <span
+                  className={
+                    pushStatus.startsWith('Browser push notifications are enabled')
+                      ? 'text-teal small'
+                      : 'text-amber small'
+                  }
+                  role="status"
+                  aria-live="polite"
+                >
+                  {pushStatus}
+                </span>
+              ) : null}
+
               {!hasCoordinates ? (
                 <span className="text-amber small">
                   A valid geographic location is required to enable localized alerts.
@@ -257,7 +337,7 @@ export default function NotificationSettings({
         ) : (
           <p className="empty">Loading notification preferences…</p>
         )}
-      </section>
+      <p className="small">Email and push share the backend subscription setting. Independent channel and critical-only preferences are not supported by this API. Device registration and Firebase status must be verified before push delivery can be expected.</p></section>
 
       {/* Administrator Configuration (Admin only) */}
       {isAdmin && (
@@ -382,7 +462,7 @@ export default function NotificationSettings({
             <section className="settings-subpanel">
               <h3>Incident Alert Threshold</h3>
               <p className="small text-muted">
-                Default score: 80. Events with deterministic risk exceeding this threshold trigger automated dispatch.
+                Enter a new threshold explicitly. The current server threshold is not included in this form response.
               </p>
               <form
                 className="admin-inline-form"
@@ -400,6 +480,7 @@ export default function NotificationSettings({
                   type="number"
                   min={1}
                   max={100}
+                  aria-label="New alert risk threshold"
                   value={thresholdInput}
                   onChange={(e) => setThresholdInput(e.target.value)}
                   required

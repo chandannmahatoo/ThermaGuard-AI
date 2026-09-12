@@ -1032,10 +1032,10 @@ function evaluatePixel(sample) {
             # ~0.0002 degrees is roughly
             # 20-22 metres in this region.
             "resx":
-                0.0002,
+                0.00018,
 
             "resy":
-                0.0002,
+                0.00018,
 
             "evalscript":
                 evalscript,
@@ -1435,7 +1435,7 @@ CONTEXT_NAMES = ('weather', 'air_quality', 'location', 'eonet', 'routing')
 CONTEXT_PREFIX = {'location': 'geocoding', 'routing': 'routing'}
 CONTEXT_TTL = {'weather': 3600, 'air_quality': 3600, 'location': 30*86400, 'eonet': 3600, 'routing': 86400}
 CONTEXT_FIELDS = {
-    'weather': ('temperature_c','relative_humidity_percent','precipitation_mm','wind_speed_kmh','wind_direction_deg','observed_at','data_kind','attribution'),
+    'weather': ('temperature_c','relative_humidity_percent','precipitation_mm','wind_speed_kmh','wind_direction_deg','observed_at','data_kind','weather_dataset','attribution'),
     'air_quality': ('pm2_5','pm10','carbon_monoxide','nitrogen_dioxide','ozone','units','observed_at','data_kind','attribution'),
     'location': ('display_name','city','district','state','country','country_code','attribution'),
     'eonet': ('matched','event_id','title','category','distance_km','event_date','source','match_radius_km','match_window_hours'),
@@ -1470,15 +1470,59 @@ def coordinates(event):
     return lat, lon
 
 
+def _weather_endpoint(observed: datetime) -> str:
+    """Select the correct Open-Meteo endpoint for the event timestamp."""
+    age_seconds = (utc_now() - observed).total_seconds()
+    if age_seconds > 7 * 86400:
+        return settings.weather_historical_api_url
+    return settings.weather_api_url
+
+
 def context_signature(name, event, destination=None):
     lat, lon = coordinates(event)
-    prefix = CONTEXT_PREFIX.get(name, name)
-    endpoint = settings.openrouteservice_api_url if name == 'routing' else getattr(settings, prefix+'_api_url')
-    signature = [round(lat, 5), round(lon, 5), endpoint]
-    if name in ('weather','air_quality','eonet'):
-        signature.append(event_time(event).isoformat())
-    if name == 'routing':
-        signature.append(list(destination) if destination is not None else None)
+
+    if name == "routing":
+        endpoint = settings.openrouteservice_api_url
+
+    elif name == "weather":
+        observed = event_time(event)
+        endpoint = _weather_endpoint(observed)
+
+    else:
+        prefix = CONTEXT_PREFIX.get(name, name)
+        endpoint = getattr(
+            settings,
+            prefix + "_api_url",
+        )
+
+    signature = [
+        round(lat, 5),
+        round(lon, 5),
+        endpoint,
+    ]
+
+    if name in ("weather", "air_quality"):
+        observed = event_time(event).replace(
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        signature.append(
+            observed.isoformat()
+        )
+
+    elif name == "eonet":
+        signature.append(
+            event_time(event).isoformat()
+        )
+
+    if name == "routing":
+        signature.append(
+            list(destination)
+            if destination is not None
+            else None
+        )
+
     return signature
 
 
@@ -1527,37 +1571,129 @@ def number(value, low=None, high=None):
 
 
 async def _hourly_context(event, name):
+    """Fetch hourly weather or air-quality evidence for the exact event hour."""
     lat, lon = coordinates(event)
     observed = event_time(event).replace(minute=0, second=0, microsecond=0)
-    # Request the event hour, never substitute current conditions for historical evidence.
-    fields = {'temperature_2m':('temperature_c',-100,70),'relative_humidity_2m':('relative_humidity_percent',0,100),
-              'precipitation':('precipitation_mm',0,None),'wind_speed_10m':('wind_speed_kmh',0,None),
-              'wind_direction_10m':('wind_direction_deg',0,360)} if name=='weather' else {
-              key:(key,0,None) for key in ('pm2_5','pm10','carbon_monoxide','nitrogen_dioxide','ozone')}
-    params = dict(latitude=lat, longitude=lon, hourly=','.join(fields), timezone='GMT',
-                  start_date=observed.date().isoformat(), end_date=observed.date().isoformat())
-    if name=='weather':
-        params.update(temperature_unit='celsius',wind_speed_unit='kmh',precipitation_unit='mm')
-    data = await _context_json(getattr(settings,name+'_api_url'), params, getattr(settings,name+'_timeout_seconds'), provider=name)
-    hourly = data['hourly']; times = hourly['time']
-    if not isinstance(times,list):raise ValueError('Invalid time array')
-    index = next((i for i,t in enumerate(times) if datetime.fromisoformat(t.replace('Z','+00:00')).replace(tzinfo=timezone.utc)==observed), None)
-    if index is None:return context_status(name, reason='event_hour_unavailable')
+
+    if name == 'weather':
+        fields = {
+            'temperature_2m': ('temperature_c', -100, 70),
+            'relative_humidity_2m': ('relative_humidity_percent', 0, 100),
+            'precipitation': ('precipitation_mm', 0, None),
+            'wind_speed_10m': ('wind_speed_kmh', 0, None),
+            'wind_direction_10m': ('wind_direction_deg', 0, 360),
+        }
+    elif name == 'air_quality':
+        fields = {
+            key: (key, 0, None)
+            for key in ('pm2_5', 'pm10', 'carbon_monoxide', 'nitrogen_dioxide', 'ozone')
+        }
+    else:
+        raise ValueError('Unsupported hourly context provider')
+
+    event_date = observed.date().isoformat()
+    params = dict(
+        latitude=lat,
+        longitude=lon,
+        hourly=','.join(fields),
+        timezone='GMT',
+        start_date=event_date,
+        end_date=event_date,
+    )
+
+    if name == 'weather':
+        params.update(
+            temperature_unit='celsius',
+            wind_speed_unit='kmh',
+            precipitation_unit='mm',
+        )
+        api_url = _weather_endpoint(observed)
+        timeout = settings.weather_timeout_seconds
+    else:
+        api_url = settings.air_quality_api_url
+        timeout = settings.air_quality_timeout_seconds
+
+    data = await _context_json(api_url, params, timeout, provider=name)
+    if not isinstance(data, dict):
+        raise ValueError('Invalid provider response')
+
+    hourly = data.get('hourly')
+    if not isinstance(hourly, dict):
+        raise ValueError('Missing hourly observations')
+
+    times = hourly.get('time')
+    if not isinstance(times, list):
+        raise ValueError('Invalid time array')
+
+    index = None
+    for i, value in enumerate(times):
+        if not isinstance(value, str):
+            continue
+        try:
+            provider_time = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            if provider_time.tzinfo is None:
+                provider_time = provider_time.replace(tzinfo=timezone.utc)
+            else:
+                provider_time = provider_time.astimezone(timezone.utc)
+        except ValueError:
+            continue
+        if provider_time == observed:
+            index = i
+            break
+
+    if index is None:
+        return context_status(name, reason='event_hour_unavailable')
+
     output = {}
-    for key,(internal,low,high) in fields.items():
-        values=hourly[key]
-        if not isinstance(values,list) or len(values)!=len(times):raise ValueError('Invalid hourly array')
-        output[internal] = None if values[index] is None else number(values[index],low,high)
-    if not any(v is not None for v in output.values()):return context_status(name,reason='no_observations')
-    expected_units = {'temperature_2m':'°C','relative_humidity_2m':'%','precipitation':'mm',
-                      'wind_speed_10m':'km/h','wind_direction_10m':'°'} if name=='weather' else {k:'μg/m³' for k in fields}
-    units=data['hourly_units']
-    for key,unit in expected_units.items():
-        if units.get(key)!=unit:raise ValueError('Unexpected units')
-    output.update(observed_at=observed.isoformat(), data_kind='modelled_grid_context',
-                  attribution='Open-Meteo' if name=='weather' else 'Open-Meteo / Copernicus CAMS')
-    if name=='air_quality':output['units']='μg/m³'
-    return {**context_status(name,'available',None),**output}
+    for key, (internal, low, high) in fields.items():
+        values = hourly.get(key)
+        if not isinstance(values, list) or len(values) != len(times):
+            raise ValueError(f'Invalid hourly array: {key}')
+        value = values[index]
+        output[internal] = None if value is None else number(value, low, high)
+
+    if not any(value is not None for value in output.values()):
+        return context_status(name, reason='no_observations')
+
+    units = data.get('hourly_units')
+    if not isinstance(units, dict):
+        raise ValueError('Missing hourly units')
+
+    if name == 'weather':
+        expected_units = {
+            'temperature_2m': '°C',
+            'relative_humidity_2m': '%',
+            'precipitation': 'mm',
+            'wind_speed_10m': 'km/h',
+            'wind_direction_10m': '°',
+        }
+    else:
+        expected_units = {key: 'μg/m³' for key in fields}
+
+    for key, expected_unit in expected_units.items():
+        if units.get(key) != expected_unit:
+            raise ValueError(f'Unexpected unit for {key}: {units.get(key)!r}')
+
+    if name == 'weather':
+        output.update(
+            observed_at=observed.isoformat(),
+            data_kind='modelled_grid_context',
+            weather_dataset=(
+                'historical_forecast'
+                if api_url == settings.weather_historical_api_url
+                else 'forecast'
+            ),
+            attribution='Open-Meteo',
+        )
+    else:
+        output.update(
+            observed_at=observed.isoformat(),
+            data_kind='modelled_grid_context',
+            attribution='Open-Meteo / Copernicus CAMS',
+            units='μg/m³',
+        )
+
+    return {**context_status(name, 'available', None), **output}
 
 
 async def _reverse_geocode(event):
@@ -1611,22 +1747,181 @@ async def _eonet_context(event):
     return {**context_status('eonet','available',None),**result,'match_radius_km':50,'match_window_hours':72}
 
 
-async def _route_context(event,destination):
-    lat,lon=coordinates(event)
-    dest_lon,dest_lat=destination
-    coordinates({'latitude':dest_lat,'longitude':dest_lon})
-    data=await _context_json(settings.openrouteservice_api_url.rstrip('/')+'/v2/directions/driving-car/geojson',
-        None,settings.routing_timeout_seconds,{'Authorization':settings.openrouteservice_api_key},
-        {'coordinates':[[lon,lat],[dest_lon,dest_lat]],'instructions':False},provider='routing')
-    feature=data['features'][0]; summary=feature['properties']['summary']
-    geometry=feature['geometry']
-    if geometry.get('type')!='LineString' or not isinstance(geometry.get('coordinates'),list):raise ValueError('Invalid route')
-    for x,y in geometry['coordinates']:coordinates({'latitude':y,'longitude':x})
-    if len(geometry['coordinates'])<2:raise ValueError('Empty route')
-    return {**context_status('routing','available',None),
-        'distance_m':number(summary['distance'],0),'duration_seconds':number(summary['duration'],0),
-        'origin':[lon,lat],'destination':[dest_lon,dest_lat],'profile':'driving-car',
-        'geometry':geometry,'attribution':'openrouteservice / © OpenStreetMap contributors'}
+async def _route_context(event, destination):
+    """Fetch an OpenRouteService driving route for one event.
+
+    ORS error code 2010 means the request was valid but one or more
+    coordinates could not be snapped to the routing graph. That is an
+    expected operational outcome for remote thermal detections, not a
+    malformed provider response.
+
+    Strategy:
+      1. Try the normal ORS snapping radius.
+      2. If ORS returns code 2010, retry once with a 2 km radius.
+      3. If code 2010 remains, return a clean ``unavailable`` packet.
+    """
+    lat, lon = coordinates(event)
+    dest_lon, dest_lat = destination
+    coordinates({'latitude': dest_lat, 'longitude': dest_lon})
+
+    url = (
+        settings.openrouteservice_api_url.rstrip('/')
+        + '/v2/directions/driving-car/geojson'
+    )
+    headers = {
+        'Authorization': settings.openrouteservice_api_key,
+        'Content-Type': 'application/json',
+    }
+
+    async def request_route(radiuses=None):
+        body = {
+            'coordinates': [
+                [lon, lat],
+                [dest_lon, dest_lat],
+            ],
+            'instructions': False,
+        }
+        if radiuses is not None:
+            body['radiuses'] = radiuses
+
+        started = time.monotonic()
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.routing_timeout_seconds,
+                headers={
+                    'User-Agent': USER_AGENT,
+                    **headers,
+                },
+            ) as client:
+                response = await asyncio.wait_for(
+                    client.post(url, json=body),
+                    settings.routing_timeout_seconds,
+                )
+
+            # ORS returns useful structured JSON for routing-domain failures
+            # such as "no routable point nearby", often with HTTP 4xx.
+            try:
+                payload = response.json()
+            except ValueError:
+                response.raise_for_status()
+                raise ValueError('Invalid OpenRouteService JSON response')
+
+            if not isinstance(payload, dict):
+                raise ValueError('Invalid OpenRouteService response')
+
+            error = payload.get('error')
+            if isinstance(error, dict):
+                code = error.get('code')
+
+                if code == 2010:
+                    # Provider is reachable and behaving correctly. The
+                    # requested point is simply not close enough to its
+                    # routable road graph.
+                    record_provider_call(
+                        'routing',
+                        'success',
+                        time.monotonic() - started,
+                    )
+                    return None, code
+
+                # Other provider errors should retain normal HTTP semantics.
+                response.raise_for_status()
+                raise ValueError('OpenRouteService returned an error response')
+
+            response.raise_for_status()
+
+            record_provider_call(
+                'routing',
+                'success',
+                time.monotonic() - started,
+            )
+            return payload, None
+
+        except Exception as exc:
+            record_provider_call(
+                'routing',
+                'failure',
+                time.monotonic() - started,
+                _safe_category(exc),
+            )
+            raise
+
+    data, error_code = await request_route()
+
+    # FIRMS detections may be well away from roads. Retry once with a
+    # bounded 2 km snapping radius before declaring routing unavailable.
+    if error_code == 2010:
+        data, error_code = await request_route([2000, 2000])
+
+    if error_code == 2010:
+        return {
+            **context_status(
+                'routing',
+                'unavailable',
+                'no_routable_point_near_event',
+            ),
+            'origin': [lon, lat],
+            'destination': [dest_lon, dest_lat],
+            'profile': 'driving-car',
+            'snap_radius_m': 2000,
+            'attribution': (
+                'openrouteservice / © OpenStreetMap contributors'
+            ),
+        }
+
+    if not isinstance(data, dict):
+        raise ValueError('Invalid OpenRouteService response')
+
+    features = data.get('features')
+    if not isinstance(features, list) or not features:
+        raise ValueError('Missing route features')
+
+    feature = features[0]
+    if not isinstance(feature, dict):
+        raise ValueError('Invalid route feature')
+
+    properties = feature.get('properties')
+    geometry = feature.get('geometry')
+
+    if not isinstance(properties, dict):
+        raise ValueError('Missing route properties')
+
+    summary = properties.get('summary')
+    if not isinstance(summary, dict):
+        raise ValueError('Missing route summary')
+
+    if not isinstance(geometry, dict):
+        raise ValueError('Missing route geometry')
+
+    if (
+        geometry.get('type') != 'LineString'
+        or not isinstance(geometry.get('coordinates'), list)
+    ):
+        raise ValueError('Invalid route')
+
+    route_coordinates = geometry['coordinates']
+    if len(route_coordinates) < 2:
+        raise ValueError('Empty route')
+
+    for point in route_coordinates:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise ValueError('Invalid route coordinate')
+        x, y = point
+        coordinates({'latitude': y, 'longitude': x})
+
+    return {
+        **context_status('routing', 'available', None),
+        'distance_m': number(summary['distance'], 0),
+        'duration_seconds': number(summary['duration'], 0),
+        'origin': [lon, lat],
+        'destination': [dest_lon, dest_lat],
+        'profile': 'driving-car',
+        'geometry': geometry,
+        'attribution': (
+            'openrouteservice / © OpenStreetMap contributors'
+        ),
+    }
 
 
 async def fetch_context(name,event,previous=None,destination=None):

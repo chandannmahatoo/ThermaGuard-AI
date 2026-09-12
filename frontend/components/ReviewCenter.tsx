@@ -15,6 +15,8 @@ import { StatusBadge } from './StatusBadge';
 
 type ReviewCenterProps = {
   model: ModelStatus | null;
+  candidates?: {event_id:string;reviewed:string;label:string}[] | null;
+  readiness?: {reviewed_rows:number;eligible_rows:number;classes_present:number;classes_total:number;split_groups:number;training_ready:boolean;missing:string[];problems:string[]} | null;
   isAdmin: boolean;
   trainBusy: boolean;
   onTrainModel: () => void;
@@ -22,6 +24,8 @@ type ReviewCenterProps = {
 
 export default function ReviewCenter({
   model,
+  readiness,
+  candidates,
   isAdmin,
   trainBusy,
   onTrainModel,
@@ -45,7 +49,7 @@ export default function ReviewCenter({
         </div>
       </div>
 
-      <div className="review-grid">
+      <section className="review-card"><h3>Human review readiness</h3>{readiness ? <><dl className="review-meta-dl"><div><dt>Reviewed rows</dt><dd>{readiness.reviewed_rows}</dd></div><div><dt>Eligible rows</dt><dd>{readiness.eligible_rows}</dd></div><div><dt>Classes represented</dt><dd>{readiness.classes_present} / {readiness.classes_total}</dd></div><div><dt>Independent split groups</dt><dd>{readiness.split_groups}</dd></div></dl>{[...(readiness.missing || []), ...(readiness.problems || [])].map((reason,i)=><p key={i}>{reason}</p>)}</> : <p>Review readiness unavailable.</p>}<p>V2-specific readiness is not exposed by this response. Candidate details are available to administrators only. Review labels remain a human, offline workflow; independent split groups prevent leakage.</p></section>{candidates && <section className="review-card"><h3>Candidate label distribution</h3><p>{candidates.length} candidates · {candidates.filter(c=>c.reviewed.toLowerCase()!=='true').length} pending review</p><dl>{Object.entries(candidates.reduce<Record<string,number>>((counts,c)=>{const key=c.label || 'Unlabeled';counts[key]=(counts[key]||0)+1;return counts},{})).map(([label,count])=><div key={label}><dt>{label.replaceAll('_',' ')}</dt><dd>{count}</dd></div>)}</dl><p>Candidate review claims are snapshots. Eligibility and current event evidence must be validated before finalizing labels.</p></section>}<div className="review-grid">
         {/* Model Status Card */}
         <section className="review-card">
           <div className="review-card-top">
@@ -144,7 +148,7 @@ export default function ReviewCenter({
               <div>
                 <b>RandomForest is Source-of-Truth</b>
                 <p className="small text-muted">
-                  Classifies thermal events into Landfill, Industrial Flare, Forest Fire, Agricultural, or Other. Gemini never overrides this.
+                  Classifies thermal events using the backend model taxonomy displayed in the candidate distribution. Gemini never overrides this.
                 </p>
               </div>
             </li>

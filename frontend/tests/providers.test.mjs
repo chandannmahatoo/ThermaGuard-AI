@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const leafletMock = {
   MapContainer: ({ children }) => React.createElement('div', { className: 'mapcontainer' }, children),
   TileLayer: () => React.createElement('div'),
+  Circle: ({ children, radius }) => React.createElement('div', { 'data-meters': radius }, children),
   CircleMarker: ({ children, center, radius }) => React.createElement('div', { 'data-center': String(center), 'data-radius': radius }, children),
   Polyline: () => React.createElement('div'),
   Tooltip: ({ children }) => React.createElement('div', { className: 'tooltip' }, children),

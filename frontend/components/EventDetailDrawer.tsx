@@ -17,19 +17,22 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import type { ThermalEvent, Evidence, ProviderContext } from '../lib/api';
+import type { ThermalEvent, Evidence, ProviderContext, EventContext } from '../lib/api';
+import {useDialogFocus} from '../lib/useDialogFocus';
+import ContextCoverage from './ContextCoverage';
 import ContextPanel from './ContextPanel';
 import { RiskBadge } from './StatusBadge';
 
 type EventDetailDrawerProps = {
   event: ThermalEvent;
   onClose: () => void;
+  onZoom?: () => void;
   token: string;
   evidence: Evidence | null;
   evidenceBusy: boolean;
   history: ThermalEvent[];
   onOpenCopilot: () => void;
-  onUpdateEventContext: (updatedContext: Record<string, unknown>) => void;
+  onUpdateEventContext: (updatedContext: EventContext) => void;
 };
 
 const num = (value: unknown, digits = 1, fallback = 'Unavailable') =>
@@ -52,6 +55,7 @@ const fmtTime = (value: string | undefined | null) => {
 export default function EventDetailDrawer({
   event,
   onClose,
+  onZoom,
   token,
   evidence,
   evidenceBusy,
@@ -59,21 +63,14 @@ export default function EventDetailDrawer({
   onOpenCopilot,
   onUpdateEventContext,
 }: EventDetailDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'thermal' | 'context' | 'routing' | 'copilot' | 'raw'>('overview');
+  const [activeTab, setActiveTab] = useState<string>('overview');
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  const dialogRef = useDialogFocus<HTMLElement>();
 
   function copyId() {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(event.id);
-      setCopied(true);
+      navigator.clipboard.writeText(event.id).then(()=>setCopied(true)).catch(()=>setCopied(false));
       setTimeout(() => setCopied(false), 2000);
     }
   }
@@ -83,7 +80,7 @@ export default function EventDetailDrawer({
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside
+      <aside ref={dialogRef}
         className="drawer"
         role="dialog"
         aria-modal="true"
@@ -150,55 +147,23 @@ export default function EventDetailDrawer({
         </div>
 
         {/* Tab Navigation */}
-        <div className="drawer-tabs">
-          <button
-            type="button"
-            className={`drawer-tab ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            Overview
-          </button>
-          <button
-            type="button"
-            className={`drawer-tab ${activeTab === 'thermal' ? 'active' : ''}`}
-            onClick={() => setActiveTab('thermal')}
-          >
-            Thermal Evidence
-          </button>
-          <button
-            type="button"
-            className={`drawer-tab ${activeTab === 'context' ? 'active' : ''}`}
-            onClick={() => setActiveTab('context')}
-          >
-            External Context
-          </button>
-          <button
-            type="button"
-            className={`drawer-tab ${activeTab === 'routing' ? 'active' : ''}`}
-            onClick={() => setActiveTab('routing')}
-          >
-            Road Routing
-          </button>
-          <button
-            type="button"
-            className={`drawer-tab ${activeTab === 'copilot' ? 'active' : ''}`}
-            onClick={() => setActiveTab('copilot')}
-          >
-            AI Copilot
-          </button>
-          <button
-            type="button"
-            className={`drawer-tab ${activeTab === 'raw' ? 'active' : ''}`}
-            onClick={() => setActiveTab('raw')}
-          >
-            Raw JSON
-          </button>
-        </div>
+        <nav className="drawer-tabs" aria-label="Event detail sections">
+          {Object.entries({overview:'Overview',thermal:'Thermal Evidence',location:'Location',weather:'Weather',air_quality:'Air Quality',satellite:'Satellite',industrial:'Industrial Context',eonet:'Natural Hazards',routing:'Routing',copilot:'AI Copilot',raw:'Raw Evidence'}).map(([id,title])=><button type="button" key={id} className={`drawer-tab ${activeTab===id?'active':''}`} aria-pressed={activeTab===id} onClick={()=>setActiveTab(id)}>{title}</button>)}
+        </nav>
+        {['location','weather','air_quality','eonet'].includes(activeTab) && <div className="drawer-tab-content"><ContextPanel
+          section={activeTab}
+          event={event}
+          token={token}
+          onContext={onUpdateEventContext}
+          onRoute={(packet: ProviderContext) => onUpdateEventContext({ ...event.context, routing: packet })}
+        />{activeTab==='location' && <button className="button" onClick={async()=>{try{await navigator.clipboard.writeText(`${event.latitude}, ${event.longitude}`);setCopied(true)}catch{setCopied(false)}}}>{copied?'Copied':'Copy coordinates'}</button>}</div>}
+        {activeTab==='satellite' && <div className="drawer-tab-content"><h3>Satellite context</h3><p>{event.context.satellite_context_available ? 'Available' : event.context.reason || 'Not available'}</p>{event.context.satellite_context_available && <dl>{['ndvi','acquisition_date','provider','satellite_image_reference','land_cover'].map(key=><div key={key}><dt>{key.replaceAll('_',' ')}</dt><dd>{String(event.context[key]??'Not available')}</dd></div>)}</dl>}</div>}
+        {activeTab==='industrial' && <div className="drawer-tab-content"><h3>OSM industrial context</h3><p>{event.context.osm_context_available ? 'Available' : event.context.osm_reason || 'Not available'}</p>{event.context.osm_context_available && <dl>{['nearby_industrial_count','nearby_facility_count','nearby_facility_names','distance_to_industrial_m','distance_to_residential_m','landuse_class'].map(key=><div key={key}><dt>{key.replaceAll('_',' ')}</dt><dd>{String(event.context[key]??'Not available')}</dd></div>)}</dl>}</div>}
 
         {/* Tab 1: Overview */}
         {activeTab === 'overview' && (
           <div className="drawer-tab-content">
-            <h3 className="drawer-section-title">Classification &amp; Location</h3>
+            <ContextCoverage context={event.context}/><h3 className="drawer-section-title">Classification &amp; Location</h3>
             <dl className="drawer-facts-grid">
               <div>
                 <dt>Predicted Class</dt>
@@ -213,12 +178,12 @@ export default function EventDetailDrawer({
                 <dd>
                   {typeof event.classification?.classification_confidence === 'number'
                     ? (event.classification.classification_confidence * 100).toFixed(1) + '%'
-                    : 'Untrained MVP'}
+                    : 'Not available'}
                 </dd>
               </div>
               <div>
                 <dt>Model Version</dt>
-                <dd>{event.classification?.model_version || 'Untrained baseline'}</dd>
+                <dd>{event.classification?.model_version || 'Not available'}</dd>
               </div>
               <div>
                 <dt>Location</dt>
@@ -353,6 +318,7 @@ export default function EventDetailDrawer({
               key={event.id}
               event={event}
               token={token}
+              onContext={onUpdateEventContext}
               onRoute={(packet: ProviderContext) => {
                 onUpdateEventContext({ ...event.context, routing: packet });
               }}
@@ -378,9 +344,11 @@ export default function EventDetailDrawer({
                 Calculate driving distance and road access route from the thermal anomaly location to emergency response stations or staging areas.
               </p>
               <ContextPanel
+                section="routing"
                 key={`routing-${event.id}`}
                 event={event}
                 token={token}
+                onContext={onUpdateEventContext}
                 onRoute={(packet: ProviderContext) => {
                   onUpdateEventContext({ ...event.context, routing: packet });
                 }}
@@ -438,7 +406,7 @@ export default function EventDetailDrawer({
         )}
 
         {/* Drawer Bottom Actions */}
-        <div className="drawer-bottom-actions">
+        <div className="drawer-bottom-actions">{onZoom && <button className="button" onClick={onZoom}>View on map</button>}
           <button
             type="button"
             className="primary drawer-explain-button"

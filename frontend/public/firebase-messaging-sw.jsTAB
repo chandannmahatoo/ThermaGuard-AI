@@ -1,0 +1,44 @@
+importScripts(
+  "https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"
+);
+
+importScripts(
+  "https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"
+);
+
+firebase.initializeApp({
+  apiKey: "AIzaSyAB-UrIUQf_5q3aa6qKGk5m3ApOK2Sl2eo",
+  authDomain: "thermalguard-ai.firebaseapp.com",
+  projectId: "thermalguard-ai",
+  storageBucket: "thermalguard-ai.firebasestorage.app",
+  messagingSenderId: "1015258100343",
+  appId: "1:1015258100343:web:e3a304e006c05a55fb4c72",
+  measurementId: "G-18T1BDPDCH",
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+  console.log(
+    "[firebase-messaging-sw.js] Background message received:",
+    payload
+  );
+
+  const title =
+    payload.notification?.title ||
+    "ThermaGuard Alert";
+
+  const options = {
+    body:
+      payload.notification?.body ||
+      "A thermal event requires your attention.",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    data: payload.data || {},
+  };
+
+  self.registration.showNotification(
+    title,
+    options
+  );
+});

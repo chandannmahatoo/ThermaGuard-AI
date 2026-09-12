@@ -112,8 +112,8 @@ export default function LandingPage({ onSignIn, onSignUp, demoMode }: LandingPag
               <span className="spec-label">NASA FIRMS Satellites</span>
             </div>
             <div className="spec-item">
-              <span className="spec-val">11 Services</span>
-              <span className="spec-label">Integrated Telemetry</span>
+              <span className="spec-val">Provider APIs</span>
+              <span className="spec-label">Configuration dependent</span>
             </div>
             <div className="spec-item">
               <span className="spec-val">RandomForest</span>
@@ -242,7 +242,7 @@ export default function LandingPage({ onSignIn, onSignUp, demoMode }: LandingPag
           <span className="eyebrow">DESIGN INTEGRITY</span>
           <h2>Architectural Reliability &amp; Safeguards</h2>
           <p className="text-muted">
-            Decision support built with strict boundaries to ensure machine learning and AI never hallucinate or compromise operational ground truth.
+            Decision support built with strict boundaries to constrain machine learning and AI explanations or compromise operational ground truth.
           </p>
         </div>
 

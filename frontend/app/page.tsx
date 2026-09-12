@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef, useCallback, FormEvent } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Activity,
@@ -27,6 +27,8 @@ import {
   Menu,
   Radio,
   FileCheck,
+  Eye,
+  EyeOff,
   Server,
 } from 'lucide-react';
 import {
@@ -57,10 +59,13 @@ import {
   RawDetectionPage,
   ProviderStatusResponse,
   ProviderContext,
+  EventContext,
   EonetHazard,
   NotificationPreferences,
 } from '../lib/api';
 
+import OperationalSummary from '../components/OperationalSummary';
+import AuthLayout from '../components/AuthLayout';
 import OverviewKPIs from '../components/OverviewKPIs';
 import FilterToolbar from '../components/FilterToolbar';
 import EventTable from '../components/EventTable';
@@ -88,7 +93,7 @@ const VIEWS = [
   { name: 'Analytics', icon: ChartNoAxesCombined },
   { name: 'AI Copilot', icon: Sparkles },
   { name: 'Providers', icon: Server },
-  { name: 'Review / Labels', icon: FileCheck },
+  { name: 'Review & Labels', icon: FileCheck },
   { name: 'Settings', icon: Settings },
 ];
 
@@ -123,8 +128,11 @@ export default function Page() {
   const [user, setUser] = useState<User | null>(null);
   const [events, setEvents] = useState<ThermalEvent[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [eventsAvailable, setEventsAvailable] = useState(false);
+  const [reviewReadiness, setReviewReadiness] = useState<{reviewed_rows:number;eligible_rows:number;classes_present:number;classes_total:number;split_groups:number;training_ready:boolean;missing:string[];problems:string[]} | null>(null);
   const [model, setModel] = useState<ModelStatus | null>(null);
   const [view, setView] = useState('Overview');
+  const [detailOpen,setDetailOpen] = useState(true);
   const [selected, setSelected] = useState<ThermalEvent | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -132,6 +140,9 @@ export default function Page() {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
   // Filters
+  const [reviewFilter,setReviewFilter] = useState('All reviews');
+  const [reviewCandidates,setReviewCandidates] = useState<{event_id:string;reviewed:string;label:string}[] | null>(null);
+  const [classificationFilter,setClassificationFilter] = useState('All classes');
   const [filter, setFilter] = useState('All risk levels');
   const [search, setSearch] = useState('');
   const [contextFilter, setContextFilter] = useState('All events');
@@ -198,6 +209,10 @@ export default function Page() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [notice, setNotice] = useState('');
 
+  const clearMapSelection = useCallback(()=>setSelected(null),[]);
+  const openMapDetail = useCallback(()=>setDetailOpen(true),[]);
+  const subscriberLocation = useMemo(()=>notif?.latitude != null && notif?.longitude != null ? {latitude:notif.latitude,longitude:notif.longitude,radiusKm:notif.alert_radius_km || 10} : null,[notif]);
+
   // Map Mode: Clustered events vs Raw detections
   const [mapMode, setMapMode] = useState('events');
   const [rawDetections, setRawDetections] = useState<RawDetection[]>([]);
@@ -205,14 +220,21 @@ export default function Page() {
   const [rawBusy, setRawBusy] = useState(false);
   const [rawError, setRawError] = useState('');
 
+  const visibleRawDetections = useMemo(()=>rawDetections.filter(d=>!area || (d.longitude>=area.bounds[0] && d.latitude>=area.bounds[1] && d.longitude<=area.bounds[2] && d.latitude<=area.bounds[3])),[rawDetections,area]);
+
   // Mobile menu
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [lastRefresh,setLastRefresh] = useState<string|null>(null);
+  const [accountOpen,setAccountOpen] = useState(false);
+  const [compactDisplay,setCompactDisplay] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Health and request tracking
   const [healthError, setHealthError] = useState('');
   const healthRequest = useRef(0);
   const workspaceRequest = useRef(0);
   const evidenceRequest = useRef(0);
+  const chatRequest = useRef(0);
   const trendsRequest = useRef(0);
 
   // Fetch Raw Detections when toggled
@@ -294,10 +316,11 @@ export default function Page() {
           }
         });
         if (request !== workspaceRequest.current) return;
-        if (data.events !== undefined) setEvents(data.events);
+        if (data.events !== undefined) { setEvents(data.events); setEventsAvailable(true); }
         if (data.alerts !== undefined) setAlerts(data.alerts);
         if (data.model !== undefined) setModel(data.model);
         setError(data.errors.join(' '));
+        if(data.events !== undefined || data.alerts !== undefined || data.model !== undefined) setLastRefresh(new Date().toISOString());
       } catch (e) {
         if (request === workspaceRequest.current) handleFailure(e);
       } finally {
@@ -327,6 +350,8 @@ export default function Page() {
       return;
     }
     setError((e as Error).message || 'Unexpected error.');
+    setAuthStatus(current => current === 'loading' ? 'unauthenticated' : current);
+    setUnauthView('login');
   }
 
   // Keyboard navigation & accessibility
@@ -371,6 +396,20 @@ export default function Page() {
         if (request === trendsRequest.current) setTrendsBusy(false);
       });
   }, [token, days]);
+
+  useEffect(() => {
+    if (!token || !user) return;
+    let active = true;
+    apiGet<typeof reviewReadiness>('/model/review-readiness', token).then(r=>{if(active)setReviewReadiness(r)}).catch(()=>{if(active)setReviewReadiness(null)});
+    return ()=>{active=false};
+  }, [token, user]);
+
+  useEffect(()=>{
+    if (!token || user?.role !== 'admin') {setReviewCandidates(null);return;}
+    let active=true;
+    apiGet<{candidates:{event_id:string;reviewed:string;label:string}[]}>('/model/review-candidates',token).then(r=>{if(active)setReviewCandidates(r.candidates)}).catch(()=>{if(active)setReviewCandidates(null)});
+    return ()=>{active=false};
+  },[token,user]);
 
   // FIRMS Status
   useEffect(() => {
@@ -487,6 +526,10 @@ export default function Page() {
 
   // Logout handler
   function logout(message = '') {
+    evidenceRequest.current++;
+    trendsRequest.current++;
+    chatRequest.current++;
+    setChatBusy(false);
     workspaceRequest.current++;
     storeToken('');
     setToken('');
@@ -494,6 +537,11 @@ export default function Page() {
     setAuthStatus('unauthenticated');
     setUnauthView('landing');
     setEvents([]);
+    setEventsAvailable(false);
+    setReviewReadiness(null);
+    setReviewCandidates(null);
+    setProviderHealth(null);
+    setNotif(null);
     setAlerts([]);
     setModel(null);
     setFirms(null);
@@ -512,9 +560,15 @@ export default function Page() {
   }
 
   // Select event
-  async function choose(e: ThermalEvent) {
+  const choose = useCallback(async (e: ThermalEvent) => {
     const request = ++evidenceRequest.current;
+    chatRequest.current++;
+    setChatBusy(false);
     setSelected(e);
+    setDetailOpen(true);
+    setAnswer('');
+    setChatMode('');
+    setQuestion('');
     setEvidence(null);
     setEvidenceBusy(true);
     setHistory([]);
@@ -532,25 +586,66 @@ export default function Page() {
     } finally {
       if (request === evidenceRequest.current) setEvidenceBusy(false);
     }
-  }
+  }, [token]);
+
+  // Keep selected event, event list, and evidence packet in sync
+  // after an on-demand external-context refresh.
+  const updateSelectedEventContext = useCallback(
+    (updatedContext: EventContext) => {
+      if (!selected) return;
+
+      const eventId = selected.id;
+
+      setSelected((current) =>
+        current && current.id === eventId
+          ? { ...current, context: updatedContext }
+          : current,
+      );
+
+      setEvents((current) =>
+        current.map((event) =>
+          event.id === eventId
+            ? { ...event, context: updatedContext }
+            : event,
+        ),
+      );
+
+      setEvidence((current) =>
+        current && current.event.id === eventId
+          ? {
+              ...current,
+              event: {
+                ...current.event,
+                context: updatedContext,
+              },
+            }
+          : current,
+      );
+    },
+    [selected],
+  );
 
   // Ask Copilot
   async function ask(e: FormEvent) {
     e.preventDefault();
+    if (!selected || chatBusy) { setError('Select an event before asking Copilot.'); return; }
+    const eventId = selected.id;
+    const request = ++chatRequest.current;
     setChatBusy(true);
     try {
       const data = await apiPost<CopilotResponse>(
         '/copilot/chat',
-        { question, event_id: selected?.id },
+        { question, event_id: eventId },
         token,
         45000
       );
+      if (request !== chatRequest.current) return;
       setChatMode(data.mode);
       setAnswer(data.answer + '\n\n— ' + modeNote(data.mode, data.reason));
     } catch (err) {
       handleFailure(err);
     } finally {
-      setChatBusy(false);
+      if (request === chatRequest.current) setChatBusy(false);
     }
   }
 
@@ -667,6 +762,7 @@ export default function Page() {
   }
 
   // Filtered Events Calculation
+  const filtered = useMemo(() => {
   const riskBandFiltered = events.filter(
     (e) =>
       (!area ||
@@ -706,8 +802,11 @@ export default function Page() {
       '30 days': 30 * 864e5,
     }[dateFilter] || Infinity);
 
-  const filtered = riskBandFiltered.filter(
+  const candidateReviews = new Map((reviewCandidates || []).map(c=>[c.event_id,c.reviewed.toLowerCase()==='true'?'Reviewed candidate':'Pending candidate']));
+  const filtered = riskBandFiltered.map(e=>({...e,review_status:candidateReviews.get(e.id)||'Unavailable'})).filter(
     (e) =>
+      (reviewFilter === 'All reviews' || e.review_status === reviewFilter) &&
+      (classificationFilter === 'All classes' || (e.classification?.predicted_class || 'unclassified') === classificationFilter) &&
       contextSatisfied(e) &&
       sourceSatisfied(e) &&
       (dateFilter === 'All time' || new Date(e.last_seen_time).getTime() >= cutoff) &&
@@ -717,6 +816,9 @@ export default function Page() {
         .toLowerCase()
         .includes(search.toLowerCase())
   );
+
+  return filtered;
+  }, [events,area,filter,contextFilter,sourceFilter,dateFilter,classificationFilter,search,reviewCandidates,reviewFilter]);
 
   const openAlerts = alerts.filter((a) => a.status === 'open').length;
 
@@ -750,33 +852,7 @@ export default function Page() {
     // Signup Form
     if (unauthView === 'signup') {
       return (
-        <main className="login-page">
-          <div className="login-art">
-            <div className="brand">
-              <span className="brand-mark">
-                <Flame size={20} />
-              </span>
-              <span>
-                ThermaGuard <b>AI</b>
-              </span>
-            </div>
-            <div>
-              <span className="eyebrow">DETECT · UNDERSTAND · ACT</span>
-              <h1>
-                Request Operational
-                <br />
-                Access
-              </h1>
-              <p>
-                Create your account to monitor thermal anomalies within your assigned geographic jurisdiction.
-              </p>
-              <div className="orbit">
-                <Shield size={80} />
-              </div>
-            </div>
-            <small>SMART INDIA HACKATHON 2026 · OPERATIONAL DASHBOARD</small>
-          </div>
-
+        <AuthLayout title="Request operational access" description="Create your account to monitor thermal anomalies within your assigned geographic area.">
           <form className="login-form" onSubmit={signup}>
             <span className="eyebrow">NEW OPERATOR ACCOUNT</span>
             <h2>Request access</h2>
@@ -828,9 +904,8 @@ export default function Page() {
                   className="auth-password-toggle"
                   aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowSignupPassword((v) => !v)}
-                  tabIndex={-1}
-                >
-                  {showSignupPassword ? '🙈' : '👁'}
+                  >
+                  {showSignupPassword ? <EyeOff size={17}/> : <Eye size={17}/>}
                 </button>
               </div>
             </label>
@@ -866,40 +941,14 @@ export default function Page() {
               </button>
             </p>
           </form>
-        </main>
+        </AuthLayout>
       );
     }
 
     // Login Form (default unauthView === 'login')
     return (
-      <main className="login-page">
-        <div className="login-art">
-          <div className="brand">
-            <span className="brand-mark">
-              <Flame size={20} />
-            </span>
-            <span>
-              ThermaGuard <b>AI</b>
-            </span>
-          </div>
-          <div>
-            <span className="eyebrow">DETECT · UNDERSTAND · ACT</span>
-            <h1>
-              Geospatial Thermal
-              <br />
-              Intelligence System
-            </h1>
-            <p>
-              Near-real-time satellite thermal anomaly monitoring, deterministic risk assessment, and traceable environmental decision support.
-            </p>
-            <div className="orbit">
-              <ScanLine size={80} />
-            </div>
-          </div>
-          <small>SMART INDIA HACKATHON 2026 · OPERATIONAL DASHBOARD</small>
-        </div>
-
-        <form className="login-form" onSubmit={login}>
+      <AuthLayout title="Geospatial thermal intelligence" description="Near-real-time satellite observations, traceable risk assessment, and environmental context in one workspace.">
+          <form className="login-form" onSubmit={login}>
           <span className="eyebrow">COMMAND CONSOLE ACCESS</span>
           <h2>Welcome back</h2>
           <p>Authenticate with your operational credentials to access your thermal workspace.</p>
@@ -951,7 +1000,7 @@ export default function Page() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. operator@demo.thermaguard.local"
+              placeholder="you@example.com"
             />
           </label>
 
@@ -970,9 +1019,8 @@ export default function Page() {
                 className="auth-password-toggle"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 onClick={() => setShowPassword((v) => !v)}
-                tabIndex={-1}
               >
-                {showPassword ? '🙈' : '👁'}
+                {showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}
               </button>
             </div>
           </label>
@@ -980,7 +1028,7 @@ export default function Page() {
           {error && <p role="alert" className="error-banner">{error}</p>}
 
           <button className="primary" disabled={busy} style={{ width: '100%', marginTop: '12px' }}>
-            {busy ? 'Establishing secure session…' : 'Sign in to Workspace'}
+            {busy && <RefreshCw size={16} className="spin" aria-hidden/>}{busy ? 'Signing in…' : 'Sign in to Workspace'}
             <ArrowUpRight size={18} />
           </button>
           <p className="small text-muted" style={{ marginTop: '14px' }}>
@@ -1003,7 +1051,7 @@ export default function Page() {
             </button>
           </p>
         </form>
-      </main>
+      </AuthLayout>
     );
   }
 
@@ -1014,7 +1062,7 @@ export default function Page() {
   return (
     <div className="app-shell">
       {/* Sidebar */}
-      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <a
           className="brand"
           href="/"
@@ -1042,7 +1090,7 @@ export default function Page() {
           </div>
         </div>
 
-        <span className="nav-label">COMMAND VIEWS</span>
+        <button type="button" className="button collapse-sidebar" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><Menu size={16}/></button><span className="nav-label">COMMAND VIEWS</span>
         <nav>
           {VIEWS.map(({ name, icon: Icon }) => {
             const isActive = view === name;
@@ -1050,10 +1098,12 @@ export default function Page() {
               <button
                 key={name}
                 type="button"
-                className={`nav-item ${isActive ? 'active' : ''}`}
+                title={name}
+                aria-current={isActive ? 'page' : undefined}
+                className={`nav-item ${name === 'Providers' ? 'nav-system-start' : ''} ${isActive ? 'active' : ''}`}
                 onClick={() => {
                   setView(name);
-                  setSelected(null);
+                  if (name !== 'AI Copilot') setSelected(null);
                   setSidebarOpen(false);
                 }}
               >
@@ -1078,7 +1128,7 @@ export default function Page() {
               type="button"
               className="model-mini-link"
               onClick={() => {
-                setView('Review / Labels');
+                setView('Review & Labels');
                 setSidebarOpen(false);
               }}
             >
@@ -1106,7 +1156,7 @@ export default function Page() {
       </aside>
 
       {/* Main Container */}
-      <div className="main-shell">
+      <div className={`main-shell ${compactDisplay ? 'compact-display' : ''} ${sidebarCollapsed ? 'shell-collapsed' : ''}`}>
         {/* Topbar */}
         <header className="topbar">
           <div className="topbar-left">
@@ -1114,6 +1164,7 @@ export default function Page() {
               type="button"
               className="mobile-menu-toggle"
               aria-label="Toggle navigation sidebar"
+              aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
               <Menu size={20} />
@@ -1126,9 +1177,9 @@ export default function Page() {
           </div>
 
           <div className="topbar-right">
-            <div className="system-status-indicator">
-              <span className="status-dot" />
-              <span>{demo ? 'DEMO FIXTURES' : 'LIVE TELEMETRY'}</span>
+            <div className="system-status-indicator" role="status" title={`Last FIRMS sync: ${fmtTime(firms?.last_success)}`}>
+              <span className={`status-dot ${backendOk===true ? 'status-pulse' : ''}`} />
+              <span>{demo ? 'DEMO' : backendOk === false ? 'OFFLINE' : backendOk !== true || !firms?.available || !providerHealth || Object.values(providerHealth.providers).some(p => ['failed', 'degraded', 'blocked'].includes(p.status)) ? 'DEGRADED' : 'LIVE DATA'}</span>
             </div>
 
             <button
@@ -1151,7 +1202,8 @@ export default function Page() {
               {openAlerts > 0 && <span className="bell-badge-pill">{openAlerts}</span>}
             </button>
 
-            <span className="avatar small-avatar">{user.role === 'admin' ? 'AD' : 'OP'}</span>
+            <span className="last-sync small" title={`Last FIRMS sync: ${fmtTime(firms?.last_success)}`}>Refreshed {lastRefresh ? new Date(lastRefresh).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Unavailable'}</span>
+            <div className="account-menu" onKeyDown={e=>{if(e.key==='Escape')setAccountOpen(false)}}><button className="avatar" aria-label="Account menu" aria-expanded={accountOpen} aria-controls="account-menu-panel" onClick={()=>setAccountOpen(!accountOpen)}>{user.email.slice(0,2).toUpperCase()}</button>{accountOpen && <div id="account-menu-panel" className="account-menu-panel"><b>{user.email}</b><small>{user.role}</small><button className="button" onClick={()=>{setView('Settings');setAccountOpen(false)}}>Profile &amp; settings</button><button className="button" onClick={()=>{setAccountOpen(false);logout()}}>Sign out</button></div>}</div>
           </div>
         </header>
 
@@ -1176,7 +1228,7 @@ export default function Page() {
                   ? 'ThermaGuard AI Evidence Copilot'
                   : view === 'Providers'
                   ? 'External Providers & Telemetry'
-                  : view === 'Review / Labels'
+                  : view === 'Review & Labels'
                   ? 'Machine Learning Model & Review Center'
                   : 'Workspace Configuration'}
               </h1>
@@ -1195,7 +1247,7 @@ export default function Page() {
                   ? 'Plain-language operational explanations grounded strictly in verified event data.'
                   : view === 'Providers'
                   ? 'Real-time telemetry, latency metrics, and API integration readiness.'
-                  : view === 'Review / Labels'
+                  : view === 'Review & Labels'
                   ? 'RandomForest classifier training gate (30+ rows, 5 classes) and data safeguards.'
                   : 'Manage notification radius, coordinates, and organization assignments.'}
               </p>
@@ -1205,7 +1257,7 @@ export default function Page() {
               <button
                 type="button"
                 className="button"
-                onClick={() => refresh()}
+                onClick={() => { refresh(); checkHealth(); }}
                 disabled={busy}
               >
                 <RefreshCw size={14} className={busy ? 'spin' : ''} />
@@ -1246,6 +1298,8 @@ export default function Page() {
             <>
               <OverviewKPIs
                 events={events}
+                dataAvailable={eventsAvailable}
+                reviewedCount={reviewReadiness?.reviewed_rows}
                 alerts={alerts}
                 model={model}
                 providerHealth={providerHealth}
@@ -1253,6 +1307,7 @@ export default function Page() {
                 demo={demo}
               />
 
+              <OperationalSummary events={events} alerts={alerts} firms={firms} providers={providerHealth} backendOk={backendOk} model={model}/>
               {/* Map Section */}
               <section className="map-intelligence-section">
                 <div className="map-section-head">
@@ -1290,33 +1345,16 @@ export default function Page() {
                 <div className="map-viewport-grid">
                   <div className="map-container-relative">
                     <MapView
-                      detections={
-                        mapMode === 'raw'
-                          ? rawDetections.filter(
-                              (d) =>
-                                !area ||
-                                (d.longitude >= area.bounds[0] &&
-                                  d.latitude >= area.bounds[1] &&
-                                  d.longitude <= area.bounds[2] &&
-                                  d.latitude <= area.bounds[3])
-                            )
-                          : undefined
-                      }
+                      onClear={clearMapSelection}
+                      onOpenDetail={openMapDetail}
+                      detections={mapMode === 'raw' ? visibleRawDetections : undefined}
                       events={filtered}
                       selected={selected}
                       onSelect={choose}
                       hazards={hazards}
                       showHazards={showHazards && mapMode === 'events'}
                       showIndustrial={showIndustrial && mapMode === 'events'}
-                      subscriberLocation={
-                        notif?.latitude && notif?.longitude
-                          ? {
-                              latitude: notif.latitude,
-                              longitude: notif.longitude,
-                              radiusKm: notif.alert_radius_km || 10,
-                            }
-                          : null
-                      }
+                      subscriberLocation={subscriberLocation}
                       showSubscriberRadius={showSubscriberRadius && mapMode === 'events'}
                     />
 
@@ -1341,7 +1379,7 @@ export default function Page() {
                         />
                         <span>OSM Industrial Sites</span>
                       </label>
-                      {notif?.latitude && notif?.longitude && (
+                      {(notif?.latitude != null && notif?.longitude != null) && (
                         <label className="floating-layer-toggle">
                           <input
                             type="checkbox"
@@ -1396,7 +1434,7 @@ export default function Page() {
                     {busy && !events.length ? (
                       <p className="empty">Loading events…</p>
                     ) : (
-                      filtered.map((e) => (
+                      filtered.slice(0, 30).map((e) => (
                         <button
                           key={e.id}
                           type="button"
@@ -1405,7 +1443,7 @@ export default function Page() {
                         >
                           <div className="event-feed-top">
                             <span className="event-feed-id">
-                              {e.is_demo ? 'DEMO · ' : ''}TG-{e.id.slice(0, 8)}
+                              {e.is_demo ? 'DEMO · ' : ''}{e.id.slice(0, 18)}
                             </span>
                             <RiskBadge level={e.risk?.risk_level} />
                           </div>
@@ -1444,6 +1482,11 @@ export default function Page() {
 
               {/* Filter Toolbar */}
               <FilterToolbar
+                reviewFilter={reviewFilter}
+                setReviewFilter={setReviewFilter}
+                classification={classificationFilter}
+                setClassification={setClassificationFilter}
+                classifications={[...new Set(events.map(e=>e.classification?.predicted_class || 'unclassified'))].sort()}
                 search={search}
                 setSearch={setSearch}
                 filter={filter}
@@ -1479,6 +1522,11 @@ export default function Page() {
           {view === 'Live Map' && (
             <>
               <FilterToolbar
+                reviewFilter={reviewFilter}
+                setReviewFilter={setReviewFilter}
+                classification={classificationFilter}
+                setClassification={setClassificationFilter}
+                classifications={[...new Set(events.map(e=>e.classification?.predicted_class || 'unclassified'))].sort()}
                 search={search}
                 setSearch={setSearch}
                 filter={filter}
@@ -1521,33 +1569,16 @@ export default function Page() {
                 <div className="map-viewport-grid" style={{ height: '560px' }}>
                   <div className="map-container-relative">
                     <MapView
-                      detections={
-                        mapMode === 'raw'
-                          ? rawDetections.filter(
-                              (d) =>
-                                !area ||
-                                (d.longitude >= area.bounds[0] &&
-                                  d.latitude >= area.bounds[1] &&
-                                  d.longitude <= area.bounds[2] &&
-                                  d.latitude <= area.bounds[3])
-                            )
-                          : undefined
-                      }
+                      onClear={clearMapSelection}
+                      onOpenDetail={openMapDetail}
+                      detections={mapMode === 'raw' ? visibleRawDetections : undefined}
                       events={filtered}
                       selected={selected}
                       onSelect={choose}
                       hazards={hazards}
                       showHazards={showHazards && mapMode === 'events'}
                       showIndustrial={showIndustrial && mapMode === 'events'}
-                      subscriberLocation={
-                        notif?.latitude && notif?.longitude
-                          ? {
-                              latitude: notif.latitude,
-                              longitude: notif.longitude,
-                              radiusKm: notif.alert_radius_km || 10,
-                            }
-                          : null
-                      }
+                      subscriberLocation={subscriberLocation}
                       showSubscriberRadius={showSubscriberRadius && mapMode === 'events'}
                     />
 
@@ -1572,7 +1603,7 @@ export default function Page() {
                         />
                         <span>OSM Industrial Footprints</span>
                       </label>
-                      {notif?.latitude && notif?.longitude && (
+                      {(notif?.latitude != null && notif?.longitude != null) && (
                         <label className="floating-layer-toggle">
                           <input
                             type="checkbox"
@@ -1607,7 +1638,7 @@ export default function Page() {
                       <h3>Monitored Events</h3>
                       <span className="badge normal">{filtered.length}</span>
                     </div>
-                    {filtered.map((e) => (
+                    {filtered.slice(0, 30).map((e) => (
                       <button
                         key={e.id}
                         type="button"
@@ -1615,7 +1646,7 @@ export default function Page() {
                         onClick={() => choose(e)}
                       >
                         <div className="event-feed-top">
-                          <span className="event-feed-id">{e.is_demo ? 'DEMO · ' : ''}TG-{e.id.slice(0, 8)}</span>
+                          <span className="event-feed-id">{e.is_demo ? 'DEMO · ' : ''}{e.id.slice(0, 18)}</span>
                           <RiskBadge level={e.risk?.risk_level} />
                         </div>
                         <div className="event-feed-class">
@@ -1637,6 +1668,11 @@ export default function Page() {
           {view === 'Events' && (
             <>
               <FilterToolbar
+                reviewFilter={reviewFilter}
+                setReviewFilter={setReviewFilter}
+                classification={classificationFilter}
+                setClassification={setClassificationFilter}
+                classifications={[...new Set(events.map(e=>e.classification?.predicted_class || 'unclassified'))].sort()}
                 search={search}
                 setSearch={setSearch}
                 filter={filter}
@@ -1685,6 +1721,9 @@ export default function Page() {
           {/* VIEW: Analytics */}
           {view === 'Analytics' && (
             <AnalyticsView
+              alerts={alerts}
+              providers={providerHealth}
+              reviewedCount={reviewReadiness?.reviewed_rows}
               trends={trends}
               trendsAvailable={trendsAvailable}
               trendsReason={trendsReason}
@@ -1726,7 +1765,7 @@ export default function Page() {
                     <div className="copilot-placeholder-state">
                       <Sparkles size={36} className="text-muted" />
                       <p>
-                        Select an event from the map or event explorer, or enter an operational question below.
+                        Select one event from the map or event explorer before asking a question.
                       </p>
                     </div>
                   )}
@@ -1741,7 +1780,7 @@ export default function Page() {
                     placeholder={
                       selected
                         ? `Ask about event ${selected.id.slice(0, 10)}…`
-                        : 'Ask about thermal risk across monitored events…'
+                        : 'Select an event from Events first…'
                     }
                     required
                     maxLength={1000}
@@ -1750,7 +1789,7 @@ export default function Page() {
                   <button
                     type="submit"
                     className="primary"
-                    disabled={chatBusy || !question.trim()}
+                    disabled={chatBusy || !question.trim() || !selected}
                   >
                     <Send size={16} />
                     Submit
@@ -1771,9 +1810,11 @@ export default function Page() {
             />
           )}
 
-          {/* VIEW: Review / Labels */}
-          {view === 'Review / Labels' && (
+          {/* VIEW: Review & Labels */}
+          {view === 'Review & Labels' && (
             <ReviewCenter
+              readiness={reviewReadiness}
+              candidates={reviewCandidates}
               model={model}
               isAdmin={user.role === 'admin'}
               trainBusy={trainBusy}
@@ -1783,7 +1824,8 @@ export default function Page() {
 
           {/* VIEW: Settings */}
           {view === 'Settings' && (
-            <NotificationSettings
+            <><section className="review-card"><h2>Profile &amp; display</h2><p>{user.email} · {user.role}</p><label><input type="checkbox" checked={compactDisplay} onChange={e=>setCompactDisplay(e.target.checked)}/>Compact display</label><p>Provider configuration is managed on the server. <button className="button" onClick={()=>setView('Providers')}>View provider status</button></p><p>Device registration: not exposed by the backend status API. Firebase: {providerHealth?.providers.firebase?.status || 'Unavailable'}.</p></section><NotificationSettings
+              authToken={token}
               notif={notif}
               notifBusy={notifBusy}
               onSaveNotif={saveNotif}
@@ -1823,7 +1865,7 @@ export default function Page() {
                 );
                 setNotice('User assigned to organization.');
               }}
-            />
+            /></>
           )}
 
           {/* Footer */}
@@ -1846,10 +1888,11 @@ export default function Page() {
       </div>
 
       {/* Selected Event Detail Drawer */}
-      {selected && (
+      {selected && detailOpen && (
         <EventDetailDrawer
           event={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => setDetailOpen(false)}
+          onZoom={() => {setView('Live Map');setDetailOpen(false)}}
           token={token}
           evidence={evidence}
           evidenceBusy={evidenceBusy}
@@ -1857,11 +1900,7 @@ export default function Page() {
           onOpenCopilot={() => {
             setCopilot(true);
           }}
-          onUpdateEventContext={(updatedContext) => {
-            const updated = { ...selected, context: updatedContext };
-            setSelected(updated);
-            setEvents(events.map((e) => (e.id === selected.id ? updated : e)));
-          }}
+          onUpdateEventContext={updateSelectedEventContext}
         />
       )}
 

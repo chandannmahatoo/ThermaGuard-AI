@@ -1,0 +1,295 @@
+.
+├── .DS_Store
+├── .freebuff
+│   ├── project-id
+│   └── run.md
+├── .gitignore
+├── README.md
+├── backend
+│   ├── .env
+│   ├── .env.example
+│   ├── acquire_review_candidates.py
+│   ├── app
+│   │   ├── bootstrap.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── intelligence.py
+│   │   ├── main.py
+│   │   ├── ml.py
+│   │   ├── providers.py
+│   │   └── security.py
+│   ├── assisted_review.py
+│   ├── batch_review_insert.py
+│   ├── candidate_inventory.py
+│   ├── export_remaining_evidence.pyTAB
+│   ├── export_review_candidates.py
+│   ├── export_review_packets.py
+│   ├── finalize_reviewed_labels.py
+│   ├── prepare_review_row.py
+│   ├── requirements.txt
+│   ├── review_common.py
+│   ├── review_event_summary.py
+│   ├── review_progress.py
+│   ├── review_queue.py
+│   ├── tests
+│   │   ├── conftest.py
+│   │   ├── test_candidate_acquisition.py
+│   │   ├── test_context_providers.py
+│   │   ├── test_firms_sources.py
+│   │   ├── test_remote_services.py
+│   │   ├── test_review_workflow.py
+│   │   ├── test_runtime_reliability.py
+│   │   └── test_system.py
+│   ├── thermaguard.db
+│   ├── thermaguard.db-shm
+│   ├── thermaguard.db-wal
+│   └── validate_review_candidates.py
+├── data
+│   ├── .DS_Store
+│   ├── backups
+│   │   ├── review_candidates.20260911T010120.986863Z.csv
+│   │   ├── review_candidates.20260911T010258.777422Z.csv
+│   │   ├── review_candidates.20260911T010525.157999Z.csv
+│   │   ├── review_candidates.20260911T010555.205198Z.csv
+│   │   ├── review_candidates.20260911T010626.015257Z.csv
+│   │   ├── review_candidates.20260911T011317.039960Z.csv
+│   │   ├── review_candidates.20260911T011418.390801Z.csv
+│   │   ├── review_candidates.20260911T011518.157347Z.csv
+│   │   ├── review_candidates.20260911T011846.402890Z.csv
+│   │   ├── review_candidates.20260911T012006.899594Z.csv
+│   │   ├── review_candidates.20260911T012118.702862Z.csv
+│   │   ├── review_candidates.20260911T012217.792004Z.csv
+│   │   ├── review_candidates.20260911T012312.617759Z.csv
+│   │   ├── review_candidates.20260911T012410.132045Z.csv
+│   │   ├── review_candidates.20260911T012530.138525Z.csv
+│   │   ├── review_candidates.20260911T013645.935995Z.csv
+│   │   ├── review_candidates.20260911T013657.465500Z.csv
+│   │   ├── review_candidates.20260911T013704.972165Z.csv
+│   │   ├── review_candidates.20260911T013711.854915Z.csv
+│   │   ├── review_candidates.20260911T013723.606670Z.csv
+│   │   ├── review_candidates.20260911T015145.742644Z.csv
+│   │   ├── review_candidates.20260911T015147.091017Z.csv
+│   │   ├── review_candidates.20260911T015148.420716Z.csv
+│   │   ├── review_candidates.20260911T015741.434513Z.csv
+│   │   ├── review_candidates.20260911T015742.802290Z.csv
+│   │   ├── review_candidates.20260911T015744.187076Z.csv
+│   │   ├── review_candidates.20260911T015745.559945Z.csv
+│   │   ├── review_candidates.20260911T015747.063633Z.csv
+│   │   ├── review_candidates.20260911T015748.479828Z.csv
+│   │   ├── review_candidates.20260911T015749.878993Z.csv
+│   │   ├── review_candidates.20260911T015751.313215Z.csv
+│   │   ├── review_candidates.20260911T015752.735878Z.csv
+│   │   ├── review_candidates.20260911T015754.139296Z.csv
+│   │   ├── review_candidates.20260911T015755.580257Z.csv
+│   │   ├── review_candidates.20260911T015756.994456Z.csv
+│   │   ├── review_candidates.20260911T015758.374409Z.csv
+│   │   ├── review_candidates.20260911T015759.846447Z.csv
+│   │   ├── review_candidates.20260911T015801.255085Z.csv
+│   │   ├── review_candidates.20260911T015802.619818Z.csv
+│   │   ├── review_candidates.20260911T020416.321933Z.csv
+│   │   ├── review_candidates.20260911T161819.434004Z.csv
+│   │   ├── review_candidates.20260911T161822.379242Z.csv
+│   │   ├── review_candidates.20260911T161824.053277Z.csv
+│   │   ├── review_candidates.20260911T161825.688822Z.csv
+│   │   ├── review_candidates.20260911T161827.310369Z.csv
+│   │   ├── review_candidates.20260911T161828.874603Z.csv
+│   │   ├── review_candidates.20260911T161900.164354Z.csv
+│   │   ├── review_candidates.20260911T161903.896779Z.csv
+│   │   ├── review_candidates.20260911T161912.598283Z.csv
+│   │   ├── review_candidates.20260911T162044.970228Z.csv
+│   │   ├── review_candidates.20260911T162050.191751Z.csv
+│   │   ├── review_candidates.20260911T162055.831154Z.csv
+│   │   ├── review_candidates.20260911T162101.538965Z.csv
+│   │   ├── review_candidates.20260911T162107.290088Z.csv
+│   │   ├── review_candidates.20260911T162253.218407Z.csv
+│   │   ├── review_candidates.20260911T163219.931545Z.csv
+│   │   ├── review_candidates.20260911T163330.708616Z.csv
+│   │   ├── review_candidates.pre_acquisition.20260911T161817.962980Z.acquisition.json
+│   │   ├── review_candidates.pre_acquisition.20260911T161817.962980Z.csv
+│   │   ├── review_candidates.pre_acquisition.20260911T161856.903903Z.acquisition.json
+│   │   ├── review_candidates.pre_acquisition.20260911T161856.903903Z.csv
+│   │   ├── review_candidates.pre_acquisition.20260911T162040.462772Z.acquisition.json
+│   │   ├── review_candidates.pre_acquisition.20260911T162040.462772Z.csv
+│   │   ├── reviewed_labels.20260911T013742.840041Z.csv
+│   │   ├── reviewed_labels.20260911T015806.486904Z.csv
+│   │   ├── reviewed_labels.20260911T020423.732236Z.csv
+│   │   ├── reviewed_labels.20260911T162448.459364Z.csv
+│   │   ├── reviewed_snapshot.20260911T161817.962980Z.json
+│   │   ├── reviewed_snapshot.20260911T161856.903903Z.json
+│   │   └── reviewed_snapshot.20260911T162040.462772Z.json
+│   ├── demo
+│   │   └── detections.csv
+│   ├── remaining_review_evidence.txt
+│   ├── review_acquisition_last_run.json
+│   ├── review_acquisition_plan.example.json
+│   ├── review_acquisition_plan.json
+│   ├── review_candidates.csv
+│   ├── review_packets
+│   │   ├── .DS_Store
+│   │   └── index.json
+│   ├── reviewed_labels.csv
+│   └── templates
+│       └── reviewed_labels.csv
+├── docs
+│   ├── ARCHITECTURE.md
+│   ├── CLEANUP_MANIFEST.md
+│   ├── CONTEXT_PROVIDERS.md
+│   ├── FRONTEND_VERIFICATION.md
+│   ├── MODEL.md
+│   ├── REVIEW_ACQUISITION.md
+│   ├── REVIEW_ACQUISITION_REPORT.md
+│   ├── RUNTIME_RELIABILITY.md
+│   └── workflow.png
+├── frontend
+│   ├── .env.example
+│   ├── .env.local
+│   ├── .next-dev
+│   │   ├── app-build-manifest.json
+│   │   ├── build-manifest.json
+│   │   ├── cache
+│   │   │   ├── .rscinfo
+│   │   │   ├── next-devtools-config.json
+│   │   │   ├── swc
+│   │   │   │   └── plugins
+│   │   │   └── webpack
+│   │   │       ├── client-development
+│   │   │       └── server-development
+│   │   ├── package.json
+│   │   ├── prerender-manifest.json
+│   │   ├── react-loadable-manifest.json
+│   │   ├── routes-manifest.json
+│   │   ├── server
+│   │   │   ├── app
+│   │   │   │   ├── page.js
+│   │   │   │   └── page_client-reference-manifest.js
+│   │   │   ├── app-paths-manifest.json
+│   │   │   ├── interception-route-rewrite-manifest.js
+│   │   │   ├── middleware-build-manifest.js
+│   │   │   ├── middleware-manifest.json
+│   │   │   ├── middleware-react-loadable-manifest.js
+│   │   │   ├── next-font-manifest.js
+│   │   │   ├── next-font-manifest.json
+│   │   │   ├── pages-manifest.json
+│   │   │   ├── server-reference-manifest.js
+│   │   │   ├── server-reference-manifest.json
+│   │   │   ├── vendor-chunks
+│   │   │   │   ├── @reduxjs.js
+│   │   │   │   ├── @swc.js
+│   │   │   │   ├── clsx.js
+│   │   │   │   ├── d3-array.js
+│   │   │   │   ├── d3-color.js
+│   │   │   │   ├── d3-format.js
+│   │   │   │   ├── d3-interpolate.js
+│   │   │   │   ├── d3-path.js
+│   │   │   │   ├── d3-scale.js
+│   │   │   │   ├── d3-shape.js
+│   │   │   │   ├── d3-time-format.js
+│   │   │   │   ├── d3-time.js
+│   │   │   │   ├── decimal.js-light.js
+│   │   │   │   ├── es-toolkit.js
+│   │   │   │   ├── eventemitter3.js
+│   │   │   │   ├── immer.js
+│   │   │   │   ├── internmap.js
+│   │   │   │   ├── leaflet.js
+│   │   │   │   ├── lucide-react.js
+│   │   │   │   ├── next.js
+│   │   │   │   ├── react-is.js
+│   │   │   │   ├── react-redux.js
+│   │   │   │   ├── recharts.js
+│   │   │   │   ├── redux-thunk.js
+│   │   │   │   ├── redux.js
+│   │   │   │   ├── reselect.js
+│   │   │   │   ├── tiny-invariant.js
+│   │   │   │   ├── use-sync-external-store.js
+│   │   │   │   └── victory-vendor.js
+│   │   │   └── webpack-runtime.js
+│   │   ├── static
+│   │   │   ├── chunks
+│   │   │   │   ├── _app-pages-browser_components_MapView_tsx.js
+│   │   │   │   ├── app
+│   │   │   │   ├── app-pages-internals.js
+│   │   │   │   ├── main-app.js
+│   │   │   │   ├── polyfills.js
+│   │   │   │   └── webpack.js
+│   │   │   ├── css
+│   │   │   │   └── app
+│   │   │   ├── development
+│   │   │   │   ├── _buildManifest.js
+│   │   │   │   └── _ssgManifest.js
+│   │   │   ├── media
+│   │   │   │   ├── layers-2x.9859cd12.png
+│   │   │   │   ├── layers.ef6db872.png
+│   │   │   │   └── marker-icon.d577052a.png
+│   │   │   └── webpack
+│   │   │       ├── 2dce0f87b1262667.webpack.hot-update.json
+│   │   │       ├── 3a3fcec264ec9879.webpack.hot-update.json
+│   │   │       ├── 48bb8f1a88b7dbb1.webpack.hot-update.json
+│   │   │       ├── 633457081244afec._.hot-update.json
+│   │   │       ├── app
+│   │   │       ├── b3458b6d86edcd2f.webpack.hot-update.json
+│   │   │       ├── bb3738e8e5dde718.webpack.hot-update.json
+│   │   │       ├── webpack.2dce0f87b1262667.hot-update.js
+│   │   │       ├── webpack.3a3fcec264ec9879.hot-update.js
+│   │   │       ├── webpack.48bb8f1a88b7dbb1.hot-update.js
+│   │   │       ├── webpack.b3458b6d86edcd2f.hot-update.js
+│   │   │       └── webpack.bb3738e8e5dde718.hot-update.js
+│   │   ├── trace
+│   │   └── types
+│   │       ├── app
+│   │       │   ├── layout.ts
+│   │       │   └── page.ts
+│   │       ├── cache-life.d.ts
+│   │       ├── package.json
+│   │       ├── routes.d.ts
+│   │       └── validator.ts
+│   ├── app
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── components
+│   │   ├── AlertCenter.tsx
+│   │   ├── AnalyticsView.tsx
+│   │   ├── AuthHighlights.tsx
+│   │   ├── AuthLayout.tsx
+│   │   ├── ContextCoverage.tsx
+│   │   ├── ContextPanel.tsx
+│   │   ├── CopilotModal.tsx
+│   │   ├── EventDetailDrawer.tsx
+│   │   ├── EventTable.tsx
+│   │   ├── FilterToolbar.tsx
+│   │   ├── LandingPage.tsx
+│   │   ├── MapView.tsx
+│   │   ├── NotificationSettings.tsx
+│   │   ├── OperationalSummary.tsx
+│   │   ├── OverviewKPIs.tsx
+│   │   ├── ProviderHealthGrid.tsx
+│   │   ├── ReviewCenter.tsx
+│   │   ├── StatusBadge.tsx
+│   │   └── UI.tsx
+│   ├── lib
+│   │   ├── api.ts
+│   │   ├── firebase.ts
+│   │   ├── pushNotifications.ts
+│   │   └── useDialogFocus.ts
+│   ├── next-env.d.ts
+│   ├── next.config.ts
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.mjs
+│   ├── tests
+│   │   ├── api.test.mjs
+│   │   ├── context.test.mjs
+│   │   ├── dashboard.test.mjs
+│   │   ├── experience.test.mjs
+│   │   └── providers.test.mjs
+│   └── tsconfig.json
+├── models
+│   ├── classifier.joblib
+│   └── metadata.json
+├── project_structure.txt
+├── thermaguard-ai.json
+├── thermaguard.db
+├── thermaguard.db-shm
+└── thermaguard.db-wal
+
+38 directories, 255 files

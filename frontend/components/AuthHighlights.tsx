@@ -1,0 +1,3 @@
+import React from 'react';
+import {Satellite, ShieldCheck, Layers} from 'lucide-react';
+export default function AuthHighlights(){return <div className="auth-capabilities">{[{icon:Satellite,title:'Satellite observations',detail:'VIIRS and MODIS thermal evidence'},{icon:ShieldCheck,title:'Traceable risk assessment',detail:'Deterministic scores with visible evidence'},{icon:Layers,title:'Context before action',detail:'Industrial, satellite and environmental context'}].map(({icon:Icon,title,detail})=><div key={title}><Icon size={19} aria-hidden/><span><b>{title}</b><small>{detail}</small></span></div>)}</div>}

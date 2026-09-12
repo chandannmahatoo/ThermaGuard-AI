@@ -44,12 +44,18 @@ export default function AlertCenter({
   busy,
 }: AlertCenterProps) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'acknowledged'>('all');
+  const [failedOnly,setFailedOnly] = useState(false);
+  const [channelFilter,setChannelFilter] = useState('all');
+  const [dateFilter,setDateFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
 
   const filteredAlerts = alerts.filter((a) => {
     if (statusFilter === 'open' && a.status === 'acknowledged') return false;
     if (statusFilter === 'acknowledged' && a.status !== 'acknowledged') return false;
     if (severityFilter !== 'all' && a.risk_level !== severityFilter) return false;
+    if(failedOnly && !a.delivery?.some(d=>d.status==='failed')) return false;
+    if(channelFilter !== 'all' && !a.delivery?.some(d=>d.channel===channelFilter)) return false;
+    if(dateFilter && a.created_at.slice(0,10)!==dateFilter) return false;
     return true;
   });
 
@@ -58,6 +64,7 @@ export default function AlertCenter({
 
   return (
     <div className="alert-center-container">
+      <div className="quick-filter-row" role="group" aria-label="Quick alert filters"><button aria-pressed={severityFilter==='Critical'} onClick={()=>setSeverityFilter(severityFilter==='Critical'?'all':'Critical')}>Critical</button><button aria-pressed={severityFilter==='High'} onClick={()=>setSeverityFilter(severityFilter==='High'?'all':'High')}>High</button><button aria-pressed={failedOnly} onClick={()=>setFailedOnly(!failedOnly)}>Failed delivery</button><button aria-pressed={statusFilter==='open'} onClick={()=>setStatusFilter(statusFilter==='open'?'all':'open')}>Unacknowledged</button><button onClick={()=>{setSeverityFilter('all');setStatusFilter('all');setFailedOnly(false);setChannelFilter('all');setDateFilter('')}}>Reset filters</button></div>
       {/* Alert Header & Filters */}
       <div className="alert-center-header">
         <div>
@@ -67,7 +74,7 @@ export default function AlertCenter({
           </p>
         </div>
 
-        <div className="alert-filter-controls">
+        <div className="alert-filter-controls"><select aria-label="Delivery channel filter" value={channelFilter} onChange={e=>setChannelFilter(e.target.value)}><option value="all">All channels</option><option value="email">Email</option><option value="push">Push</option></select><label>Created date<input type="date" value={dateFilter} onChange={e=>setDateFilter(e.target.value)}/></label>
           <div className="alert-status-tabs">
             <button
               type="button"
@@ -174,6 +181,7 @@ export default function AlertCenter({
                     </div>
 
                     {/* Delivery Audit Trail */}
+<p className="small">Recipient radius: not exposed in alert response · Duplicate prevention: enforced by backend</p>
                     {Array.isArray(a.delivery) && a.delivery.length > 0 ? (
                       <div className="delivery-audit-trail">
                         <span className="delivery-audit-label">Delivery Audit:</span>
@@ -201,7 +209,7 @@ export default function AlertCenter({
                       <small className="delivery-admin-only-note">
                         Multi-channel delivery audit logs visible to administrators.
                       </small>
-                    ) : null}
+                    ) : <p className="small">Email / Push: no delivery attempt recorded.</p>}
                   </div>
                 </div>
 

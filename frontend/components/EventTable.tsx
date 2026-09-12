@@ -12,6 +12,7 @@ import {
   Radio,
 } from 'lucide-react';
 import type { ThermalEvent } from '../lib/api';
+import ContextCoverage from './ContextCoverage';
 import { RiskBadge } from './StatusBadge';
 
 type EventTableProps = {
@@ -94,6 +95,8 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
               <th>ML Classification</th>
               <th
                 className="sortable-header"
+                tabIndex={0}
+                onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('risk')}
                 title="Sort by deterministic risk score"
               >
@@ -104,6 +107,8 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
               </th>
               <th
                 className="sortable-header"
+                tabIndex={0}
+                onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('frp')}
                 title="Sort by mean fire radiative power"
               >
@@ -114,6 +119,8 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
               </th>
               <th
                 className="sortable-header"
+                tabIndex={0}
+                onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('detections')}
                 title="Sort by detection count"
               >
@@ -122,9 +129,11 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                   {sortField === 'detections' && (sortOrder === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
                 </div>
               </th>
-              <th>Context Coverage</th>
+              <th>First Seen</th><th>Review Status</th><th>Context Coverage</th>
               <th
                 className="sortable-header"
+                tabIndex={0}
+                onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('time')}
                 title="Sort by last observed timestamp"
               >
@@ -138,7 +147,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
           <tbody>
             {busy && events.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-loading-cell">
+                <td colSpan={10} className="table-loading-cell">
                   <div className="table-skeleton-row" />
                   <div className="table-skeleton-row" />
                   <div className="table-skeleton-row" />
@@ -146,7 +155,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
               </tr>
             ) : paginatedEvents.length === 0 ? (
               <tr>
-                <td colSpan={8} className="table-empty-cell">
+                <td colSpan={10} className="table-empty-cell">
                   <Radio size={24} className="empty-icon" />
                   <p>No thermal events match the current filters.</p>
                 </td>
@@ -164,6 +173,9 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                 return (
                   <tr
                     key={e.id}
+                    tabIndex={0}
+                    aria-selected={isSelected}
+                    onKeyDown={ev=>{if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){ev.preventDefault();const row=ev.key==='ArrowDown'?ev.currentTarget.nextElementSibling:ev.currentTarget.previousElementSibling;(row as HTMLElement|null)?.focus()}else if(ev.key==='Enter'&&ev.target===ev.currentTarget){onSelect(e)}}}
                     className={`geospatial-row ${isSelected ? 'row-selected' : ''}`}
                     onClick={() => onSelect(e)}
                   >
@@ -236,14 +248,9 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                     </td>
 
                     {/* Context Coverage Indicators */}
+                    <td>{fmtTime(e.start_time)}</td><td><span className="review-state-chip">{e.review_status || 'Not available'}</span></td>
                     <td className="cell-context">
-                      <div className="context-dots-group" title="Enriched Context: Location, Weather, Air Quality, OSM, Satellite">
-                        <span className={`context-dot ${hasLocation ? 'dot-active' : ''}`} title="Geocoding Location">L</span>
-                        <span className={`context-dot ${hasWeather ? 'dot-active' : ''}`} title="Weather Grid">W</span>
-                        <span className={`context-dot ${hasAirQuality ? 'dot-active' : ''}`} title="Air Quality">A</span>
-                        <span className={`context-dot ${hasOsm ? 'dot-active' : ''}`} title="OSM Industrial Context">O</span>
-                        <span className={`context-dot ${hasSatellite ? 'dot-active' : ''}`} title="Copernicus Sentinel NDVI">S</span>
-                      </div>
+                      <ContextCoverage context={e.context} compact/>
                     </td>
 
                     {/* Last Observed */}

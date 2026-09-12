@@ -16,6 +16,8 @@ export function StatusBadge({ state }: { state: SystemReadinessState }) {
 
 export function ProviderBadge({ state }: { state: ProviderHealthState }) {
   const stateLabels: Record<string, string> = {
+    blocked: 'Blocked',
+    unavailable: 'Unavailable',
     healthy: 'Healthy',
     configured: 'Configured',
     disabled: 'Disabled',
@@ -24,5 +26,6 @@ export function ProviderBadge({ state }: { state: ProviderHealthState }) {
     failed: 'Failed',
   };
   const label = stateLabels[state] || state;
-  return <span className={`provider-state provider-${state}`}>{label}</span>;
+  return <span title={state === 'configured' ? 'Configured = ready, but no successful interaction recorded in this backend process.' : label}
+    className={`provider-state provider-${state}`}>{label}</span>;
 }
