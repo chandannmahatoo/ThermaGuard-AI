@@ -9,9 +9,9 @@ from pathlib import Path
 
 from app.intelligence import CLASSES, FEATURES
 from app.ml import TRAINING_COLUMNS
-from app.review_validation import valid_source_reference
+from app.ml import valid_source_reference
 
-MANUAL_FIELDS = ('split_group', 'label', 'reviewed', 'reviewer', 'source_reference')
+MANUAL_FIELDS = ('split_group', 'label', 'reviewed', 'reviewer', 'source_reference', 'reviewed_at', 'review_notes')
 
 
 def read_csv(path):
@@ -81,9 +81,13 @@ def write_csv(path, columns, rows, original=None):
     return backup
 
 
-def reviewed_errors(row):
+def reviewed_errors(row, require_timestamp=False):
     """Publication guard: never publish a row the unchanged ml.dataset rejects."""
     errors = []
+    if require_timestamp:
+        from app.ml import valid_review_timestamp
+        if not valid_review_timestamp(row.get('reviewed_at')):
+            errors.append('reviewed_at must be a timezone-aware, non-future review timestamp')
     event_id = row.get('event_id', '')
     if not event_id.strip() or event_id != event_id.strip():
         errors.append('event_id must be nonempty and unpadded')

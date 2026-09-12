@@ -4,7 +4,7 @@ from itertools import product
 import csv
 import json
 import math
-from .review_validation import valid_source_reference
+import re
 from pathlib import Path
 from datetime import datetime, timezone
 import joblib
@@ -13,7 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_recall_fscore_support, classification_report, confusion_matrix
-from .intelligence import FEATURES, FEATURE_VERSION, CLASSES, features
+from .intelligence import FEATURES, FEATURE_VERSION, CLASSES, features, V2_SENSOR_FIELDS
 ROOT=Path(__file__).resolve().parents[2]
 DATA=ROOT/'data'/'reviewed_labels.csv'
 CANDIDATES=ROOT/'data'/'review_candidates.csv'
@@ -27,7 +27,36 @@ META=ROOT/'models'/'metadata.json'
 # TRAINING_COLUMNS: exactly what the training pipeline reads.
 REVIEW_META=['event_id','split_group','label','reviewed','reviewer','source_reference','is_demo']
 ASSISTANCE_COLUMNS=['latitude','longitude','start_time','last_seen_time','landuse_class','osm_context_available','satellite_context_available','abnormality_score','abnormality_status','risk_score','risk_level','nearby_facility_names']
+SENSOR_COLUMNS = ['source_counts', 'sensor_provenance', 'viirs_detection_count', 'modis_detection_count',
+    'unique_satellite_count', 'unique_sensor_count', 'viirs_primary_mean', 'viirs_secondary_mean',
+    'modis_primary_mean', 'modis_secondary_mean', 'scan_mean', 'track_mean']
+SENSOR_COLUMNS += V2_SENSOR_FIELDS
+ASSISTANCE_COLUMNS += SENSOR_COLUMNS
 TRAINING_COLUMNS=REVIEW_META+FEATURES
+
+def valid_source_reference(value):
+    if not isinstance(value, str) or value != value.strip() or len(value.strip()) < 8:
+        return False
+    normalized = re.sub(r'[^a-z0-9]+', ' ', value.casefold()).strip()
+    placeholders = {'real source or evidence here', 'your verified evidence source',
+                    'todo', 'tbd', 'test', 'placeholder', 'n a', 'na', 'none', 'null',
+                    'unknown', 'source', 'evidence', 'not available'}
+    return (normalized not in placeholders
+            and not re.search(r'\b(todo|tbd|placeholder)\b', normalized)
+            and not normalized.startswith(('test only', 'real source or evidence here',
+                                           'your verified evidence source'))
+            and len(set(normalized.replace(' ', ''))) >= 4)
+
+
+def valid_review_timestamp(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return stamp.tzinfo is not None and stamp <= datetime.now(timezone.utc)
+    except (ValueError, TypeError):
+        return False
+
 
 def dataset(path=None):
     data=Path(path) if path else DATA
@@ -80,6 +109,9 @@ def candidate_row(event):
         'risk_level':risk.get('risk_level'),
         'nearby_facility_names':('; '.join(sorted(set(str(n) for n in facilities))) or '') if facilities else '',
     })
+    row.update({key: event.get('sensor_summary', {}).get(key) for key in SENSOR_COLUMNS})
+    row['source_counts'] = json.dumps(event.get('source_counts', {}), sort_keys=True)
+    row['sensor_provenance'] = json.dumps(event.get('sensor_provenance', []), sort_keys=True)
     return row
 
 def readiness(rows):
@@ -383,6 +415,10 @@ def train():
     return meta
 
 def predict(event):
+    if event.get('sensor_summary', {}).get('modis_detection_count', 0):
+        return dict(predicted_class=None, class_probabilities=None, classification_confidence=None,
+            model_version=None, feature_version=FEATURE_VERSION,
+            reason='Current reviewed model is not validated for MODIS or mixed-sensor events')
     if not ARTIFACT.exists() or not META.exists(): return dict(predicted_class=None,class_probabilities=None,classification_confidence=None,model_version=None,feature_version=FEATURE_VERSION,reason='No model trained on reviewed observations')
     metadata=json.loads(META.read_text())
     if metadata.get('features')!=FEATURES or metadata.get('feature_version')!=FEATURE_VERSION:

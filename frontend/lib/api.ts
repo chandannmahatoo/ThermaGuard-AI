@@ -1,16 +1,13 @@
 // ============================================================
 // Centralized API client (single source of truth).
 //
-// Base URLs come from environment configuration:
-//   NEXT_PUBLIC_API_BASE_URL  e.g. http://localhost:8000/api/v1
-//   NEXT_PUBLIC_BACKEND_URL   e.g. http://localhost:8000
-// with local fallbacks so the app still runs without .env.local.
-// No component builds its own URLs; nothing is hardcoded beyond
-// these documented local defaults.
+// Browser requests use the Next.js same-origin proxy by default.
+// Optional public URLs support deployments with a separate API origin.
+// BACKEND_URL configures the proxy on the Next.js server.
 // ============================================================
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/+$/, '');
-const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1').replace(/\/+$/, '');
+const BACKEND_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || API_BASE.replace(/\/api\/v1$/, '')).replace(/\/+$/, '');
 
 // ============================================================
 // Types (mirror the verified FastAPI response shapes)
@@ -48,7 +45,22 @@ export type EventRisk = {
   abnormality: Abnormality;
 };
 
+export type ProviderContext = {
+  status: 'available' | 'unavailable' | 'failed' | 'deferred';
+  provider: string;
+  fetched_at?: string;
+  reason?: string;
+  display_name?: string;
+  geometry?: {type: 'LineString'; coordinates: [number,number][]};
+  [key: string]: unknown;
+};
+
 export type EventContext = {
+  weather?: ProviderContext;
+  air_quality?: ProviderContext;
+  location?: ProviderContext;
+  eonet?: ProviderContext;
+  routing?: ProviderContext;
   osm_context_available?: boolean;
   osm_reason?: string;
   satellite_context_available?: boolean;
@@ -70,6 +82,8 @@ export type EventContext = {
 };
 
 export type ThermalEvent = {
+  source_counts?: Record<string, number>;
+  sensor_summary?: Record<string, number | boolean | null>;
   id: string;
   latitude: number;
   longitude: number;
@@ -111,6 +125,9 @@ export type Alert = {
   created_at: string;
   status: 'open' | 'acknowledged' | string;
   notification_status: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  delivery?: AlertDelivery[] | null;
   is_demo: boolean;
 };
 
@@ -139,12 +156,23 @@ export type Evidence = {
 
 export type CopilotResponse = {
   answer: string;
-  mode: 'ollama' | 'deterministic_fallback' | string;
+  mode: 'gemini' | 'deterministic_fallback' | string;
+  reason?: string;
   event_ids: string[];
 };
 
 export type TrendPoint = { date: string; events: number; mean_risk: number };
 export type AnalyticsResponse = TrendPoint[] | { available: false; reason: string; window_days?: number };
+export type AnalyticsSummary = {
+  available: boolean;
+  active_events: number;
+  critical_events: number;
+  persistent_events: number;
+  mean_frp: number | null;
+  max_frp: number | null;
+  events_by_class: Record<string, number>;
+  events_by_risk: Record<string, number>;
+};
 export type AreaResult = { name: string; bounds: number[]; source: string };
 export type Organization = { id: number; name: string; email: string };
 export type Assignment = {
@@ -215,14 +243,15 @@ async function request<T>(
     token,
     body,
     timeoutMs = DEFAULT_TIMEOUT_MS,
-  }: { method?: RequestMethod; token?: string; body?: unknown; timeoutMs?: number } = {},
+    baseUrl = API_BASE,
+  }: { method?: RequestMethod; token?: string; body?: unknown; timeoutMs?: number; baseUrl?: string } = {},
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     // Absolute URLs (health probe) bypass the API base prefix.
-    const url = /^https?:\/\//.test(path) ? path : API_BASE + path;
+    const url = /^https?:\/\//.test(path) ? path : baseUrl + path;
     const response = await fetch(url, {
       method,
       headers: {
@@ -322,7 +351,90 @@ export function apiDelete<T>(path: string, token?: string, timeoutMs?: number): 
 
 // Unauthenticated health probe against the backend origin.
 export function fetchHealth(timeoutMs = 6000): Promise<{ status: string; project: string; demo_mode: boolean }> {
-  return request<{ status: string; project: string; demo_mode: boolean }>(BACKEND_URL + '/health', {
+  return request<{ status: string; project: string; demo_mode: boolean }>('/health', {
     timeoutMs,
+    baseUrl: BACKEND_URL,
   });
+}
+
+export type RawDetection = {id:string;latitude:number;longitude:number;source_dataset?:string;satellite:string;instrument:string;observed_at:string;frp:number;is_demo:boolean};
+export type RawDetectionPage = {total:number;offset:number;detections:RawDetection[]};
+
+// ============================================================
+// Provider health (dynamic status cards) and NASA EONET layer.
+// All payloads are secret-free by backend contract; statuses:
+// healthy · configured · disabled · not_configured · degraded · failed.
+// ============================================================
+
+export type ProviderState = 'healthy' | 'configured' | 'disabled' | 'not_configured' | 'degraded' | 'failed' | string;
+
+export type ProviderHealthEntry = {
+  status: ProviderState;
+  last_success: string | null;
+  last_failure: string | null;
+  last_error_category: string | null;
+  last_latency_ms: number | null;
+};
+
+export type ProviderStatusResponse = {
+  providers: Record<string, ProviderHealthEntry>;
+  note: string;
+};
+
+export type EonetHazard = {
+  eonet_id: string;
+  title: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  event_date: string;
+  source: string;
+};
+
+export type EonetEventsResponse = {
+  available: boolean;
+  reason: string | null;
+  count?: number;
+  events: EonetHazard[];
+};
+
+export type NotificationPreferences = {
+  notifications_enabled: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  alert_radius_km: number;
+};
+
+export type AlertDelivery = {channel: string; status: string; sent_at: string | null};
+
+// Fetch provider health: configuration state plus last real interaction.
+export function fetchProviderStatus(token: string, timeoutMs = 15000): Promise<ProviderStatusResponse> {
+  return apiGet<ProviderStatusResponse>('/providers/status', token, timeoutMs);
+}
+
+// Current open NASA EONET natural hazards for the map layer.
+export function fetchEonetEvents(token: string, timeoutMs = 20000): Promise<EonetEventsResponse> {
+  return apiGet<EonetEventsResponse>('/eonet/events', token, timeoutMs);
+}
+
+// Authentication succeeds independently of optional dashboard data requests.
+export async function loadWorkspace(token: string, onAuthenticated: (user: User) => void) {
+  const user = await apiGet<User>('/auth/me', token);
+  onAuthenticated(user);
+  const [events, alerts, model] = await Promise.allSettled([
+    apiGet<ThermalEvent[]>('/events', token),
+    apiGet<Alert[]>('/alerts', token),
+    apiGet<ModelStatus>('/model/status', token, 30000),
+  ]);
+  for (const result of [events, alerts, model]) {
+    if (result.status === 'rejected' && result.reason instanceof ApiError && result.reason.status === 401) throw result.reason;
+  }
+  const errors = [events, alerts, model].flatMap((result, index) => result.status === 'rejected'
+    ? [`${['Events', 'Alerts', 'Model status'][index]}: ${result.reason instanceof Error ? result.reason.message : 'Could not load data.'}`] : []);
+  return {
+    events: events.status === 'fulfilled' ? events.value : undefined,
+    alerts: alerts.status === 'fulfilled' ? alerts.value : undefined,
+    model: model.status === 'fulfilled' ? model.value : undefined,
+    errors,
+  };
 }

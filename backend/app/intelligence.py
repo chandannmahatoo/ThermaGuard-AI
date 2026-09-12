@@ -1,5 +1,6 @@
 """One deterministic event, feature, baseline and decision-support pipeline."""
 
+from collections import Counter
 import hashlib
 import math
 import statistics
@@ -7,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 
 from pyproj import Geod
 
-from .config import settings
+from .config import settings, FIRMS_SOURCES
 
 
 GEOD = Geod(ellps="WGS84")
@@ -91,11 +92,37 @@ def distance(a, b):
 # FIRMS OBSERVATION VALIDATION
 # ============================================================
 
-def validate(row, is_demo=False):
+def observation_identity(row, dataset=None):
+    """Normalized physical observation identity, with optional dataset namespace."""
+    values = (float(row['latitude']), float(row['longitude']), row['observed_at'],
+              row.get('satellite'), row.get('instrument'))
+    return (dataset, *values) if dataset is not None else values
+
+
+def validate(row, is_demo=False, source_dataset=None):
     """
     Validate and normalize one NASA FIRMS observation.
     """
 
+    if source_dataset is not None and source_dataset not in FIRMS_SOURCES:
+        raise ValueError('Unsupported FIRMS source')
+    expected = FIRMS_SOURCES[source_dataset][1] if source_dataset else None
+    if expected and (row.get('instrument') != expected or not row.get('satellite')):
+        raise ValueError('FIRMS instrument differs from selected dataset')
+    primary_field = 'brightness' if expected == 'MODIS' else 'bright_ti4' if expected == 'VIIRS' else None
+    secondary_field = 'bright_t31' if expected == 'MODIS' else 'bright_ti5'
+
+    def optional_number(name):
+        value = row.get(name)
+        if value in (None, ''):
+            return None
+        result = float(value)
+        if not math.isfinite(result) or result < 0:
+            raise ValueError('Invalid optional sensor measurement')
+        return result
+
+    secondary = optional_number(secondary_field)
+    scan, track = optional_number('scan'), optional_number('track')
     lat = float(row["latitude"])
     lon = float(row["longitude"])
 
@@ -115,8 +142,7 @@ def validate(row, is_demo=False):
     frp = float(row["frp"])
 
     brightness = float(
-        row.get("bright_ti4")
-        or row.get("brightness")
+        row.get(primary_field) if primary_field else (row.get("bright_ti4") or row.get("brightness"))
     )
 
     if not all(
@@ -136,6 +162,11 @@ def validate(row, is_demo=False):
             "instrument",
         ]
     )
+
+    if source_dataset:
+        identity = repr(observation_identity(dict(latitude=lat, longitude=lon,
+            observed_at=observed.isoformat(), satellite=row.get('satellite'),
+            instrument=row.get('instrument')), source_dataset))
 
     source_id = hashlib.sha256(
         identity.encode()
@@ -157,7 +188,7 @@ def validate(row, is_demo=False):
         "provider":
             "demo"
             if is_demo
-            else "NASA",
+            else ("NASA FIRMS" if source_dataset else "NASA"),
 
         "processing_version":
             "1",
@@ -197,8 +228,17 @@ def validate(row, is_demo=False):
         "is_demo":
             is_demo,
 
-        "raw":
-            row,
+        "source_dataset": source_dataset,
+        "version": row.get('version'),
+        "acquired_at": observed.isoformat(),
+        "daynight": row.get('daynight', 'U'),
+        "thermal_primary": brightness,
+        "thermal_secondary": secondary,
+        "thermal_primary_field": primary_field or ('bright_ti4' if row.get('bright_ti4') else 'brightness'),
+        "thermal_secondary_field": secondary_field,
+        "scan": scan,
+        "track": track,
+        "raw": dict(row),
     }
 
 
@@ -240,6 +280,87 @@ def quality(row):
 # ============================================================
 # SPATIOTEMPORAL EVENT CLUSTERING
 # ============================================================
+
+V2_SENSOR_FIELDS = ['viirs_snpp_count', 'viirs_noaa20_count', 'viirs_noaa21_count', 'modis_count',
+    'independent_detection_count', 'nrt_sp_representation_count', 'unique_instrument_count',
+    'viirs_frp_mean', 'viirs_frp_max', 'modis_frp_mean', 'modis_frp_max',
+    'day_detection_fraction', 'night_detection_fraction', 'cross_sensor_confirmed',
+    'viirs_primary_thermal_mean', 'viirs_secondary_thermal_mean',
+    'modis_primary_thermal_mean', 'modis_secondary_thermal_mean']
+
+
+def sensor_family(row):
+    instrument = row.get('instrument') or row.get('raw', {}).get('instrument')
+    satellite = str(row.get('satellite') or row.get('raw', {}).get('satellite') or '')
+    if instrument == 'MODIS' and satellite in ('A', 'T', 'Aqua', 'Terra'):
+        return 'MODIS'
+    if instrument == 'VIIRS':
+        return {'N':'SNPP', 'N20':'NOAA20', '1':'NOAA20', 'N21':'NOAA21', '2':'NOAA21'}.get(satellite, 'unknown')
+    return 'unknown'
+
+
+def sensor_evidence(group):
+    """Stored representations are retained; independent counts collapse NRT/SP copies."""
+    result = {}
+    def mean_present(field, instrument=None):
+        values = [row.get(field) for row in group if row.get(field) is not None
+                  and (instrument is None or row.get('instrument') == instrument)]
+        return statistics.mean(values) if values else None
+    result['source_counts'] = dict(sorted(Counter(
+        row.get('source_dataset') or row.get('acquisition_query', {}).get('source') or 'legacy_unknown'
+        for row in group).items()))
+    provenance = {}
+    for row in group:
+        dataset = row.get('source_dataset') or row.get('acquisition_query', {}).get('source') or 'legacy_unknown'
+        key = (dataset, row.get('instrument'), row.get('satellite'), row.get('version') or row.get('raw', {}).get('version'))
+        entry = provenance.setdefault(key, dict(source_dataset=dataset, instrument=key[1], satellite=key[2],
+            version=key[3], count=0, first_acquired_at=row['observed_at'], last_acquired_at=row['observed_at']))
+        entry['count'] += 1
+        entry['first_acquired_at'] = min(entry['first_acquired_at'], row['observed_at'])
+        entry['last_acquired_at'] = max(entry['last_acquired_at'], row['observed_at'])
+    result['sensor_provenance'] = sorted(provenance.values(), key=lambda item: str(item))
+    result['sensor_summary'] = {
+        'viirs_detection_count': sum(row.get('instrument') == 'VIIRS' for row in group),
+        'modis_detection_count': sum(row.get('instrument') == 'MODIS' for row in group),
+        'unique_satellite_count': len({row.get('satellite') for row in group if row.get('satellite')}),
+        'unique_sensor_count': len({row.get('instrument') for row in group if row.get('instrument')}),
+        'viirs_primary_mean': mean_present('thermal_primary', 'VIIRS'),
+        'viirs_secondary_mean': mean_present('thermal_secondary', 'VIIRS'),
+        'modis_primary_mean': mean_present('thermal_primary', 'MODIS'),
+        'modis_secondary_mean': mean_present('thermal_secondary', 'MODIS'),
+        'scan_mean': mean_present('scan'), 'track_mean': mean_present('track'),
+    }
+    independent = {}
+    for row in sorted(group, key=lambda row: (not (row.get('source_dataset') or '').endswith('_SP'), row['id'])):
+        satellite = {'1':'N20', '2':'N21', 'Aqua':'A', 'Terra':'T'}.get(str(row.get('satellite')), row.get('satellite'))
+        key = observation_identity({**row, 'satellite':satellite})
+        independent.setdefault(key, row)  # Prefer SP representation for derived evidence, not a label.
+    rows = list(independent.values())
+    summary = result['sensor_summary']
+    families = Counter(sensor_family(row) for row in rows)
+    summary.update(unique_satellite_count=len({{'1':'N20','2':'N21','Aqua':'A','Terra':'T'}.get(str(row.get('satellite')),row.get('satellite')) for row in rows if row.get('satellite')}),
+        viirs_snpp_count=families['SNPP'], viirs_noaa20_count=families['NOAA20'],
+        viirs_noaa21_count=families['NOAA21'], modis_count=families['MODIS'],
+        independent_detection_count=len(rows), nrt_sp_representation_count=len(group)-len(rows),
+        unique_instrument_count=len({row.get('instrument') for row in rows if row.get('instrument')}),
+        cross_sensor_confirmed=len({(row.get('instrument'), {'1':'N20','2':'N21','Aqua':'A','Terra':'T'}.get(str(row.get('satellite')),row.get('satellite')))
+                                    for row in rows if sensor_family(row) != 'unknown'}) >= 2,
+        day_detection_fraction=sum(row.get('day_night')=='D' for row in rows)/len(rows) if rows else None,
+        night_detection_fraction=sum(row.get('day_night')=='N' for row in rows)/len(rows) if rows else None)
+    for instrument, prefix, primary, secondary in [('VIIRS','viirs','bright_ti4','bright_ti5'),('MODIS','modis','brightness','bright_t31')]:
+        sensor_rows=[row for row in rows if row.get('instrument')==instrument]
+        for suffix, field, raw_field in [('primary_thermal_mean','thermal_primary',primary),('secondary_thermal_mean','thermal_secondary',secondary),('frp_mean','frp','frp'),('frp_max','frp','frp')]:
+            values=[]
+            for row in sensor_rows:
+                value=row.get(field)
+                if value is None:value=row.get('raw',{}).get(raw_field)
+                try:
+                    value=float(value)
+                    if math.isfinite(value) and value>=0:values.append(value)
+                except (ValueError,TypeError):pass
+            summary[prefix+'_'+suffix]=(max(values) if suffix.endswith('_max') else statistics.mean(values)) if values else None
+    return result
+
 
 def cluster(rows):
     """
@@ -466,6 +587,8 @@ def cluster(rows):
                 "monitoring",
         }
 
+        if any(row.get('source_dataset') for row in group):
+            event.update(sensor_evidence(group))
         events.append(event)
 
     return events
@@ -518,6 +641,11 @@ def features(event):
                 ]
             }
         )
+
+    if event.get('sensor_summary', {}).get('modis_detection_count', 0):
+        # Feature version 2 was reviewed on VIIRS. Do not present MODIS band
+        # measurements or numeric confidence as calibrated VIIRS equivalents.
+        merged.update(mean_brightness=None, max_brightness=None, quality_mean=None)
 
     return [
         (

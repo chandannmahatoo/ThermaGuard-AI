@@ -26,21 +26,55 @@ def finalize(candidates=None, output=None):
     reviewed = [row for row in rows if row['reviewed'].lower() == 'true']
     if not reviewed:
         raise ValueError('Nothing to finalize: no rows are marked reviewed=true')
-    problems = [f"{row['event_id']}: {error}" for row in reviewed for error in reviewed_errors(row)]
+    problems = [f"{row['event_id']}: {error}" for row in reviewed for error in reviewed_errors(row, require_timestamp=True)]
     if problems:
         raise ValueError('Refusing invalid reviewed rows:\n' + '\n'.join(problems))
     eligible = ml.dataset(candidates)
     if {row['event_id'] for row in eligible} != {row['event_id'] for row in reviewed}:
         raise ValueError('Reviewed rows disagree with ml.dataset eligibility; no output written')
-    output_rows = [{key: row[key] for key in ml.TRAINING_COLUMNS}
+    # Preserve sensor provenance alongside the unchanged model-input prefix.
+    sensor_columns = [key for key in ml.SENSOR_COLUMNS if key in columns
+                      and any(row.get(key, '') not in ('', None, '{}', '[]') for row in reviewed)]
+    output_columns = ml.TRAINING_COLUMNS + sensor_columns + [key for key in ('reviewed_at','review_notes') if key in columns]
+    output_rows = [{key: row.get(key, '') for key in output_columns}
                    for row in sorted(reviewed, key=lambda row: row['event_id'])]
     original = output.read_bytes() if output.exists() else None
     if candidates.read_bytes() != snapshot:
         raise ValueError('Candidate CSV changed during validation; retry after reloading')
-    backup = write_csv(output, ml.TRAINING_COLUMNS, output_rows, original)
+    backup = write_csv(output, output_columns, output_rows, original)
     return {**ml.readiness(eligible), 'candidate_rows': len(rows), 'published_rows': len(output_rows),
             'class_counts': {label: sum(row['label'] == label for row in eligible) for label in CLASSES},
             'backup': backup, 'output': output}
+
+
+def extend_sensor_evidence(output=None, session_factory=None):
+    """Append observed evidence to the canonical legacy export, without reapproving labels.
+
+    Existing cells are immutable. New timestamp/notes remain blank; only an
+    explicit human review can satisfy the V2 gate. No training is performed.
+    """
+    import json
+    from app.database import Session, Event, Detection
+    from app.intelligence import sensor_evidence
+    output=Path(output) if output else OUTPUT
+    columns,rows,snapshot=read_csv(output)
+    additions=[key for key in ml.SENSOR_COLUMNS+['reviewed_at','review_notes'] if key not in columns]
+    with (session_factory or Session)() as db:
+        for row in rows:
+            item=db.get(Event,row['event_id'])
+            if item is None or item.is_demo:raise ValueError('Canonical reviewed event missing or demo')
+            observations=[]
+            for identity in item.payload.get('detection_ids',[]):
+                detection=db.get(Detection,identity)
+                if detection is None or detection.is_demo:raise ValueError('Real observation missing')
+                observations.append(detection.payload)
+            evidence=sensor_evidence(observations)
+            values={**evidence['sensor_summary'],
+                    'source_counts':json.dumps(evidence['source_counts'],sort_keys=True),
+                    'sensor_provenance':json.dumps(evidence['sensor_provenance'],sort_keys=True)}
+            for key in additions:row[key]='' if values.get(key) is None else values[key]
+    backup=write_csv(output,columns+additions,rows,snapshot)
+    return {'rows_preserved':len(rows),'appended_columns':additions,'backup':str(backup) if backup else None,'reapproved':0}
 
 
 def main():

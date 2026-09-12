@@ -1,4 +1,5 @@
 """Inspect one candidate; change human-owned metadata only with explicit flags."""
+from datetime import datetime, timezone
 import argparse
 from pathlib import Path
 import sys
@@ -32,6 +33,9 @@ def update_review_row(path, event_id, updates):
     changes = dict(updates)
     if 'reviewed' in changes:
         changes['reviewed'] = changes['reviewed'].lower()
+    if changes.get('reviewed') == 'true' and 'reviewed_at' not in changes:
+        # Timestamp the explicit human approval now; never backdate existing labels.
+        changes['reviewed_at'] = datetime.now(timezone.utc).isoformat()
     edited = {**row, **changes}
     if edited.get('is_demo', '').lower() != 'false':
         raise ValueError('Only non-demo candidate rows can be reviewed')
@@ -43,11 +47,12 @@ def update_review_row(path, event_id, updates):
     if edited.get('reviewed', '').lower() not in ('true', 'false'):
         raise ValueError('reviewed must be true or false; specify it explicitly to correct the row')
     if edited['reviewed'].lower() == 'true':
-        problems = reviewed_errors(edited)
+        problems = reviewed_errors(edited, require_timestamp=True)
         if problems:
             raise ValueError('; '.join(problems))
         if 'reviewed' not in changes:
             raise ValueError('Editing an approved row requires explicit --reviewed true to reapprove or --reviewed false to reopen')
+    columns += [key for key in changes if key not in columns]
     row.update(changes)
     backup = write_csv(path, columns, rows, original)
     return row.copy(), backup
@@ -60,6 +65,8 @@ def main(argv=None):
     parser.add_argument('--label', choices=CLASSES)
     parser.add_argument('--split-group')
     parser.add_argument('--reviewer')
+    parser.add_argument('--reviewed-at')
+    parser.add_argument('--review-notes')
     parser.add_argument('--source-reference')
     parser.add_argument('--reviewed', type=str.lower, choices=['true', 'false'])
     args = parser.parse_args(argv)

@@ -5,6 +5,7 @@ import json
 from urllib.parse import urlencode
 
 from app import ml
+from app.intelligence import sensor_evidence
 from app.database import Detection, Session
 from review_common import read_csv
 from review_event_summary import load_event, render_summary
@@ -20,7 +21,7 @@ def render_packet(event, detections):
     queries = [d.get('acquisition_query') for d in detections if d.get('acquisition_query')]
     terms = f'{lat:.4f} {lon:.4f} fire {start}'
     # Explicit whitelist prevents classification outputs and human labels from entering packets.
-    evidence = {'detection_ids': event.get('detection_ids'), 'source_sensors': sensors,
+    evidence = {**sensor_evidence(detections), 'raw_observations': detections, 'detection_ids': event.get('detection_ids'), 'source_sensors': sensors,
                 'provider_queries': queries, 'history': event.get('history'),
                 'abnormality': (event.get('risk') or {}).get('abnormality'),
                 'osm_satellite_context': event.get('context')}

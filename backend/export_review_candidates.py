@@ -14,7 +14,7 @@ OUTPUT = ROOT / 'data' / 'review_candidates.csv'
 COLUMNS = REVIEW_META + list(FEATURES) + ASSISTANCE_COLUMNS
 
 
-def export_candidates(path=None, session_factory=None):
+def export_candidates(path=None, session_factory=None, freeze_reviewed=False):
     path = Path(path) if path is not None else OUTPUT
     old_columns, previous, original = read_csv(path) if path.exists() else ([], [], None)
     old = {row['event_id']: row for row in previous}
@@ -29,6 +29,11 @@ def export_candidates(path=None, session_factory=None):
             # Produce the same cell representation as csv.DictWriter before comparison.
             row = {key: '' if fresh.get(key) is None else str(fresh[key]) for key in COLUMNS}
             prior = old.get(item.id)
+            if freeze_reviewed and prior and prior.get('reviewed', '').lower() == 'true':
+                # Preserve the original human-reviewed snapshot verbatim, even when
+                # it is stale. V2 audit reports staleness; this is not reapproval.
+                rows.append({key: prior.get(key, '') for key in columns})
+                continue
             if prior:
                 if prior.get('is_demo', '').lower() != 'false':
                     raise ValueError(f'{item.id}: prior is_demo is not false; resolve provenance before export')

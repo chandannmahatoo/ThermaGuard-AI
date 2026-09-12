@@ -863,38 +863,33 @@ def test_demo_sync_and_fallback(
     )
 
     # This test must verify deterministic fallback behavior regardless
-    # of whether a real Ollama server is currently running locally.
+    # of whether the Gemini provider is reachable.
     monkeypatch.setattr(
         main.settings,
-        "ollama_enabled",
+        "gemini_enabled",
         True,
     )
 
     monkeypatch.setattr(
         main.settings,
-        "ollama_model",
+        "gemini_model",
         "test",
     )
 
-    original = (
-        httpx.AsyncClient
-    )
-
-    def failure(request):
-        return httpx.Response(
-            503
-        )
+    def failure(prompt):
+        return {
+            "reachable":
+                True,
+            "response_ok":
+                False,
+            "reason":
+                "provider_error",
+        }
 
     monkeypatch.setattr(
-        main.httpx,
-        "AsyncClient",
-        lambda **kwargs:
-            original(
-                transport=httpx.MockTransport(
-                    failure
-                ),
-                **kwargs,
-            ),
+        main,
+        "_call_gemini",
+        failure,
     )
 
     assert (
@@ -948,22 +943,26 @@ def test_firms_mock(
         "test",
     )
 
+    providers._availability_cache.clear()
+
     original = (
         httpx.AsyncClient
     )
 
     def handler(request):
+        if 'data_availability' in request.url.path:
+            return httpx.Response(200, text='data_id,min_date,max_date\nVIIRS_SNPP_NRT,2000-01-01,2099-12-31\n')
 
         return httpx.Response(
             200,
             text=(
                 "latitude,longitude,"
                 "acq_date,acq_time,"
-                "frp,bright_ti4\n"
+                "frp,bright_ti4,instrument,satellite\n"
                 "22,70,2026-09-10,"
-                "0100,100,340\n"
+                "0100,100,340,VIIRS,N\n"
                 "999,70,2026-09-10,"
-                "0100,100,340"
+                "0100,100,340,VIIRS,N"
             ),
         )
 
@@ -987,7 +986,7 @@ def test_firms_mock(
                     6,
                     98,
                     38,
-                ]
+                ], start_date='2026-09-10'
             )
         )
     )
@@ -1262,6 +1261,7 @@ def test_real_sync_route_mocked(
     monkeypatch,
 ):
     c, factory = client
+    monkeypatch.setattr(main.settings, "firms_live_sources", "VIIRS_SNPP_NRT")
 
     with factory() as db:
 
@@ -1429,35 +1429,30 @@ def test_ollama_down_retains_events(
 
     monkeypatch.setattr(
         main.settings,
-        "ollama_enabled",
+        "gemini_enabled",
         True,
     )
 
     monkeypatch.setattr(
         main.settings,
-        "ollama_model",
+        "gemini_model",
         "test",
     )
 
-    original = (
-        httpx.AsyncClient
-    )
-
-    def failure(request):
-        return httpx.Response(
-            503
-        )
+    def failure(prompt):
+        return {
+            "reachable":
+                True,
+            "response_ok":
+                False,
+            "reason":
+                "provider_error",
+        }
 
     monkeypatch.setattr(
-        main.httpx,
-        "AsyncClient",
-        lambda **kwargs:
-            original(
-                transport=httpx.MockTransport(
-                    failure
-                ),
-                **kwargs,
-            ),
+        main,
+        "_call_gemini",
+        failure,
     )
 
     result = c.post(
@@ -3009,6 +3004,12 @@ def test_finalizer_writes_training_schema():
             rows,
         )
 
+        from review_common import read_csv, write_csv
+        columns, fixture_rows, original_csv = read_csv(candidates)
+        for row in fixture_rows:
+            row['reviewed_at'] = '2026-01-02T00:00:00+00:00' if row['reviewed'] == 'true' else ''
+        write_csv(candidates, columns + ['reviewed_at'], fixture_rows, original_csv)
+
         output = (
             Path(folder)
             / "reviewed_labels.csv"
@@ -3054,7 +3055,7 @@ def test_finalizer_writes_training_schema():
             header = reader.fieldnames
 
         assert (
-            header == ml.TRAINING_COLUMNS
+            header == ml.TRAINING_COLUMNS + ['reviewed_at']
         )
 
         # Assistance columns must not leak into
@@ -3420,3 +3421,36 @@ def candidate_feature_row(
         "is_demo": "false",
         **overrides,
     }
+
+
+def test_copilot_selected_event_context_and_no_mutation(client, monkeypatch):
+    """The explanation boundary sends one selected record and has no write authority."""
+    import json
+    c, _ = client
+    headers = auth(c)
+    before = c.get('/api/v1/events', headers=headers).json()
+    chosen = before[0]
+    monkeypatch.setattr(main.settings, 'gemini_enabled', True)
+    monkeypatch.setattr(main.settings, 'gemini_model', 'test')
+    prompts = []
+
+    def capture(prompt,system=None):
+        prompts.append((prompt,system))
+        return {'reachable': True, 'response_ok': True, 'answer': 'Explanation only.', 'reason': None}
+
+    monkeypatch.setattr(main, '_call_gemini', capture)
+    response = c.post('/api/v1/copilot/chat', headers=headers,
+                      json={'event_id': chosen['id'], 'question': 'Explain this event using only the available evidence.'})
+    assert response.status_code == 200 and response.json()['mode'] == 'gemini'
+    assert response.json()['event_ids'] == [chosen['id']]
+    assert len(prompts) == 1
+    packet = json.loads(prompts[0][0])
+    assert packet['question'] == 'Explain this event using only the available evidence.'
+    context = packet['events']
+    rules = prompts[0][1] or ''
+    assert [event['id'] for event in context] == [chosen['id']]
+    assert context[0]['classification'] == chosen['classification']
+    assert context[0]['risk'] == chosen['risk']
+    assert 'fire radiative power' in rules and 'score points' in rules
+    assert 'not a confirmed' in rules and 'never mix' in rules.lower()
+    assert c.get('/api/v1/events', headers=headers).json() == before

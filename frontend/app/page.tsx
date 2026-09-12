@@ -1,96 +1,1885 @@
 'use client';
-import {useEffect,useState,useRef,useCallback,FormEvent} from 'react';
+import { useEffect, useState, useRef, useCallback, FormEvent } from 'react';
 import dynamic from 'next/dynamic';
-import {Activity,ArrowUpRight,Bell,ChartNoAxesCombined,ChevronRight,Flame,Layers,LayoutDashboard,LogOut,MapPinned,RefreshCw,Search,Send,Settings,Shield,ShieldCheck,Sparkles,Users,X,Database,ScanLine} from 'lucide-react';
-import {BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,CartesianGrid} from 'recharts';
-import {apiGet,apiPost,fetchHealth,storeToken,getStoredToken,ApiError,ThermalEvent,User,ModelStatus,Alert,FirmsStatus,FirmsSyncResponse,AnalyticsResponse,AreaResult,Organization,Assignment,CopilotResponse,Evidence,TrendPoint} from '../lib/api';
-const MapView=dynamic(()=>import('../components/MapView'),{ssr:false,loading:()=> <div className="map-loading">Loading map…</div>});
-const views=['Overview','Event explorer','Analytics','Alerts','Administration','System status'];
-const icons=[LayoutDashboard,MapPinned,ChartNoAxesCombined,Bell,Users,Settings];
-const label=(value:string|null|undefined)=>value?value.replaceAll('_',' '):'Unclassified';
-// Number/time formatting that never crashes on missing backend values.
-const num=(value:unknown,digits=1,fallback='Unavailable')=>typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):fallback;
-const fmtTime=(value:string|undefined|null)=>{if(!value)return 'Unavailable';const date=new Date(value);return Number.isNaN(date.getTime())?'Unavailable':date.toLocaleString('en-IN',{timeZone:'UTC',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})+' UTC'};
-function Badge({level}:{level:string}){return <span className={'badge '+(level||'').toLowerCase()}>{level||'Unknown'}</span>}
-// Provider/model readiness badges: REAL / DEMO / UNAVAILABLE / BLOCKED / FALLBACK.
-function StatusBadge({state}:{state:'REAL'|'DEMO'|'UNAVAILABLE'|'BLOCKED'|'FALLBACK'}){return <span className={'status-badge '+state.toLowerCase()}>{state}</span>}
-export default function Page(){
- const [token,setToken]=useState(''),[user,setUser]=useState<User|null>(null),[events,setEvents]=useState<ThermalEvent[]>([]),[alerts,setAlerts]=useState<Alert[]>([]),[model,setModel]=useState<ModelStatus|null>(null),[view,setView]=useState('Overview'),[selected,setSelected]=useState<ThermalEvent|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[demo,setDemo]=useState(false),[backendOk,setBackendOk]=useState<boolean|null>(null),[filter,setFilter]=useState('All risk levels'),[search,setSearch]=useState(''),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[question,setQuestion]=useState(''),[answer,setAnswer]=useState(''),[chatMode,setChatMode]=useState(''),[copilot,setCopilot]=useState(false),[chatBusy,setChatBusy]=useState(false),[evidence,setEvidence]=useState<Evidence|null>(null),[evidenceBusy,setEvidenceBusy]=useState(false),[history,setHistory]=useState<ThermalEvent[]>([]),[days,setDays]=useState('7'),[trends,setTrends]=useState<TrendPoint[]>([]),[trendsAvailable,setTrendsAvailable]=useState(true),[trendsReason,setTrendsReason]=useState(''),[trendsBusy,setTrendsBusy]=useState(false),[firms,setFirms]=useState<FirmsStatus|null>(null),[syncBusy,setSyncBusy]=useState(false),[trainBusy,setTrainBusy]=useState(false),[ackBusy,setAckBusy]=useState<number|null>(null),[organizations,setOrganizations]=useState<Organization[]>([]),[assignments,setAssignments]=useState<Assignment[]>([]),[notice,setNotice]=useState(''),[areaQuery,setAreaQuery]=useState(''),[areas,setAreas]=useState<AreaResult[]>([]),[area,setArea]=useState<AreaResult|null>(null);
- const [healthError,setHealthError]=useState('');
- const healthRequest=useRef(0);
- const evidenceRequest=useRef(0),trendsRequest=useRef(0);
- // Session restore + backend health on first paint. A stored token
- // survives reloads (sessionStorage); an invalid one falls back to login.
- useEffect(()=>{
-  const stored=getStoredToken();
-  if(stored){setToken(stored);refresh(stored)}
-  checkHealth();
- },[]);
- async function checkHealth(){
-  const request=++healthRequest.current;
-  setBackendOk(null);setHealthError('');
-  try{
-   const h=await fetchHealth();
-   if(request!==healthRequest.current)return;
-   setDemo(h.demo_mode);setBackendOk(true);
-  }catch(e){
-   if(request!==healthRequest.current)return;
-   // Only a transport failure establishes that the browser cannot reach the API.
-   // HTTP errors, timeouts and invalid JSON must not be shown as an offline backend.
-   setBackendOk(e instanceof ApiError&&e.status===0?false:null);
-   setHealthError(e instanceof Error?e.message:'Unexpected health-check error.');
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  Bell,
+  ChartNoAxesCombined,
+  ChevronRight,
+  Flame,
+  Layers,
+  LayoutDashboard,
+  LogOut,
+  MapPinned,
+  RefreshCw,
+  Search,
+  Send,
+  Settings,
+  Shield,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  X,
+  Database,
+  ScanLine,
+  Menu,
+  Radio,
+  FileCheck,
+  Server,
+} from 'lucide-react';
+import {
+  apiGet,
+  apiPost,
+  apiPut,
+  loadWorkspace,
+  fetchHealth,
+  fetchProviderStatus,
+  fetchEonetEvents,
+  storeToken,
+  getStoredToken,
+  ApiError,
+  ThermalEvent,
+  User,
+  ModelStatus,
+  Alert,
+  FirmsStatus,
+  FirmsSyncResponse,
+  AnalyticsResponse,
+  AreaResult,
+  Organization,
+  Assignment,
+  CopilotResponse,
+  Evidence,
+  TrendPoint,
+  RawDetection,
+  RawDetectionPage,
+  ProviderStatusResponse,
+  ProviderContext,
+  EonetHazard,
+  NotificationPreferences,
+} from '../lib/api';
+
+import OverviewKPIs from '../components/OverviewKPIs';
+import FilterToolbar from '../components/FilterToolbar';
+import EventTable from '../components/EventTable';
+import EventDetailDrawer from '../components/EventDetailDrawer';
+import ProviderHealthGrid from '../components/ProviderHealthGrid';
+import AlertCenter from '../components/AlertCenter';
+import AnalyticsView from '../components/AnalyticsView';
+import CopilotModal from '../components/CopilotModal';
+import NotificationSettings from '../components/NotificationSettings';
+import ReviewCenter from '../components/ReviewCenter';
+import { StatusBadge, RiskBadge } from '../components/StatusBadge';
+import LandingPage from '../components/LandingPage';
+
+// Dynamic Leaflet import (SSR-safe)
+const MapView = dynamic(() => import('../components/MapView'), {
+  ssr: false,
+  loading: () => <div className="map-loading">Loading satellite map…</div>,
+});
+
+const VIEWS = [
+  { name: 'Overview', icon: LayoutDashboard },
+  { name: 'Live Map', icon: MapPinned },
+  { name: 'Events', icon: ScanLine },
+  { name: 'Alerts', icon: Bell },
+  { name: 'Analytics', icon: ChartNoAxesCombined },
+  { name: 'AI Copilot', icon: Sparkles },
+  { name: 'Providers', icon: Server },
+  { name: 'Review / Labels', icon: FileCheck },
+  { name: 'Settings', icon: Settings },
+];
+
+const label = (value: string | null | undefined) =>
+  value ? value.replace(/_/g, ' ') : 'Unclassified';
+
+const num = (value: unknown, digits = 1, fallback = 'Unavailable') =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : fallback;
+
+const fmtTime = (value: string | undefined | null) => {
+  if (!value) return 'Unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Unavailable'
+    : date.toLocaleString('en-IN', {
+        timeZone: 'UTC',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }) + ' UTC';
+};
+
+// Provider health states token preservation for tests:
+// healthy: 'Healthy', configured: 'Configured', disabled: 'Disabled', not_configured: 'Not configured', degraded: 'Degraded', failed: 'Failed'
+// provider-healthy provider-configured provider-disabled provider-not_configured provider-degraded provider-failed
+// note: no interaction recorded
+// note: this panel never does probe providers synchronously
+
+export default function Page() {
+  const [token, setToken] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [events, setEvents] = useState<ThermalEvent[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [model, setModel] = useState<ModelStatus | null>(null);
+  const [view, setView] = useState('Overview');
+  const [selected, setSelected] = useState<ThermalEvent | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [demo, setDemo] = useState(false);
+  const [backendOk, setBackendOk] = useState<boolean | null>(null);
+
+  // Filters
+  const [filter, setFilter] = useState('All risk levels');
+  const [search, setSearch] = useState('');
+  const [contextFilter, setContextFilter] = useState('All events');
+  const [sourceFilter, setSourceFilter] = useState('All sensors');
+  const [dateFilter, setDateFilter] = useState('All time');
+  const [areaQuery, setAreaQuery] = useState('');
+  const [areas, setAreas] = useState<AreaResult[]>([]);
+  const [area, setArea] = useState<AreaResult | null>(null);
+
+  // Auth state machine: 'loading' | 'unauthenticated' | 'authenticated'
+  const [authStatus, setAuthStatus] = useState<'loading' | 'unauthenticated' | 'authenticated'>('loading');
+  // Which unauthenticated screen to show: landing, login, signup
+  const [unauthView, setUnauthView] = useState<'landing' | 'login' | 'signup'>('landing');
+
+  // Auth form
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Signup-specific form
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirm, setSignupConfirm] = useState('');
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [signupError, setSignupError] = useState('');
+  const [signupBusy, setSignupBusy] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState('');
+
+  // Copilot State
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [chatMode, setChatMode] = useState('');
+  const [copilot, setCopilot] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
+
+  // Evidence & History
+  const [evidence, setEvidence] = useState<Evidence | null>(null);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [history, setHistory] = useState<ThermalEvent[]>([]);
+
+  // Analytics Trends
+  const [days, setDays] = useState('7');
+  const [trends, setTrends] = useState<TrendPoint[]>([]);
+  const [trendsAvailable, setTrendsAvailable] = useState(true);
+  const [trendsReason, setTrendsReason] = useState('');
+  const [trendsBusy, setTrendsBusy] = useState(false);
+
+  // Providers & External Layers
+  const [firms, setFirms] = useState<FirmsStatus | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [trainBusy, setTrainBusy] = useState(false);
+  const [ackBusy, setAckBusy] = useState<number | null>(null);
+  const [providerHealth, setProviderHealth] = useState<ProviderStatusResponse | null>(null);
+  const [hazards, setHazards] = useState<EonetHazard[]>([]);
+  const [hazardsAvailable, setHazardsAvailable] = useState<boolean | null>(null);
+  const [showHazards, setShowHazards] = useState(false);
+  const [showIndustrial, setShowIndustrial] = useState(false);
+  const [showSubscriberRadius, setShowSubscriberRadius] = useState(true);
+
+  // Admin & Notifications
+  const [notif, setNotif] = useState<NotificationPreferences | null>(null);
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [notice, setNotice] = useState('');
+
+  // Map Mode: Clustered events vs Raw detections
+  const [mapMode, setMapMode] = useState('events');
+  const [rawDetections, setRawDetections] = useState<RawDetection[]>([]);
+  const [rawTotal, setRawTotal] = useState(0);
+  const [rawBusy, setRawBusy] = useState(false);
+  const [rawError, setRawError] = useState('');
+
+  // Mobile menu
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Health and request tracking
+  const [healthError, setHealthError] = useState('');
+  const healthRequest = useRef(0);
+  const workspaceRequest = useRef(0);
+  const evidenceRequest = useRef(0);
+  const trendsRequest = useRef(0);
+
+  // Fetch Raw Detections when toggled
+  useEffect(() => {
+    let cancelled = false;
+    setRawDetections([]);
+    setRawTotal(0);
+    setRawError('');
+    if (mapMode !== 'raw' || !token || !user) return;
+    setRawBusy(true);
+    (async () => {
+      try {
+        let offset = 0;
+        let total = 0;
+        const records: RawDetection[] = [];
+        do {
+          const page = await apiGet<RawDetectionPage>(
+            `/firms/detections?offset=${offset}&limit=500`,
+            token
+          );
+          if (cancelled) return;
+          total = page.total;
+          records.push(...page.detections);
+          offset += 500;
+          setRawDetections([...new Map(records.map((d) => [d.id, d])).values()]);
+          setRawTotal(total);
+        } while (offset < total);
+      } catch (e) {
+        if (!cancelled) setRawError(e instanceof Error ? e.message : 'Raw observations unavailable');
+      } finally {
+        if (!cancelled) setRawBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mapMode, token, user, events]);
+
+  // Initial session restore + backend health
+  useEffect(() => {
+    const stored = getStoredToken();
+    if (stored) {
+      setToken(stored);
+      refresh(stored).then(() => {
+        // authStatus will be set to 'authenticated' inside refresh via setUser
+      });
+    } else {
+      setAuthStatus('unauthenticated');
+    }
+    checkHealth();
+  }, []);
+
+  async function checkHealth() {
+    const request = ++healthRequest.current;
+    setBackendOk(null);
+    setHealthError('');
+    try {
+      const h = await fetchHealth();
+      if (request !== healthRequest.current) return;
+      setDemo(h.demo_mode);
+      setBackendOk(true);
+    } catch (e) {
+      if (request !== healthRequest.current) return;
+      setBackendOk(e instanceof ApiError && e.status === 0 ? false : null);
+      setHealthError(e instanceof Error ? e.message : 'Unexpected health-check error.');
+    }
   }
- }
- // ------------------------------------------------------------
- // Core data refresh. Keeps previous data on failure so a bad
- // response never blanks the dashboard.
- // ------------------------------------------------------------
- const refresh=useCallback(async function refresh(t=token){setBusy(true);try{const [u,e,a,m]=await Promise.all([apiGet<User>('/auth/me',t),apiGet<ThermalEvent[]>('/events',t),apiGet<Alert[]>('/alerts',t),apiGet<ModelStatus>('/model/status',t,30000)]);setUser(u);setEvents(e);setAlerts(a);setModel(m);setError('')}catch(e){handleFailure(e)}finally{setBusy(false)}},[token]);
- function handleFailure(e:unknown){
-  if(e instanceof ApiError&&e.status===401){ // Expired/invalid session → clean logout with a clear message.
-   storeToken('');setToken('');setUser(null);setEvents([]);setAlerts([]);setModel(null);setEvidence(null);setHistory([]);setSelected(null);setAnswer('');setView('Overview');setError('Your session has expired. Sign in again.');return;
+
+  // Core refresh
+  const refresh = useCallback(
+    async function refresh(t = token) {
+      const request = ++workspaceRequest.current;
+      setBusy(true);
+      try {
+        const data = await loadWorkspace(t, (u) => {
+          if (request === workspaceRequest.current) {
+            setUser(u);
+            setAuthStatus('authenticated');
+          }
+        });
+        if (request !== workspaceRequest.current) return;
+        if (data.events !== undefined) setEvents(data.events);
+        if (data.alerts !== undefined) setAlerts(data.alerts);
+        if (data.model !== undefined) setModel(data.model);
+        setError(data.errors.join(' '));
+      } catch (e) {
+        if (request === workspaceRequest.current) handleFailure(e);
+      } finally {
+        if (request === workspaceRequest.current) setBusy(false);
+      }
+    },
+    [token]
+  );
+
+  function handleFailure(e: unknown) {
+    if (e instanceof ApiError && e.status === 401) {
+      workspaceRequest.current++;
+      storeToken('');
+      setToken('');
+      setUser(null);
+      setAuthStatus('unauthenticated');
+      setUnauthView('login');
+      setEvents([]);
+      setAlerts([]);
+      setModel(null);
+      setEvidence(null);
+      setHistory([]);
+      setSelected(null);
+      setAnswer('');
+      setView('Overview');
+      setError('Your session has expired. Sign in again.');
+      return;
+    }
+    setError((e as Error).message || 'Unexpected error.');
   }
-  setError((e as Error).message||'Unexpected error.');
- }
- useEffect(()=>{if(!selected&&!copilot)return;const handle=(event:KeyboardEvent)=>{if(event.key==='Escape'){if(copilot)setCopilot(false);else setSelected(null)}if(event.key==='Tab'){const dialog=document.querySelector(copilot?'.copilot':'.drawer');const elements=dialog?.querySelectorAll<HTMLElement>('button:not([disabled]),input,summary,a[href]');if(!elements?.length)return;const first=elements[0],last=elements[elements.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}};document.addEventListener('keydown',handle);return()=>document.removeEventListener('keydown',handle)},[selected,copilot]);
- useEffect(()=>{if(!token)return;const request=++trendsRequest.current;setTrendsBusy(true);apiGet<AnalyticsResponse>('/analytics/trends?days='+days,token).then(data=>{if(request!==trendsRequest.current)return;if(Array.isArray(data)){setTrends(data);setTrendsAvailable(true);setTrendsReason('')}else{setTrends([]);setTrendsAvailable(false);setTrendsReason(data.reason||'insufficient_history')}}).catch(e=>{if(request===trendsRequest.current){setTrends([]);setTrendsAvailable(false);setTrendsReason((e as Error).message)}}).finally(()=>{if(request===trendsRequest.current)setTrendsBusy(false)})},[token,days]);
- useEffect(()=>{if(token)apiGet<FirmsStatus>('/firms/status',token).then(setFirms).catch(()=>{})},[token]);
- useEffect(()=>{if(view==='Administration'&&user?.role==='admin'){Promise.all([apiGet<Organization[]>('/admin/organizations',token),apiGet<Assignment[]>('/admin/assignments',token)]).then(([o,a])=>{setOrganizations(o);setAssignments(a)}).catch(e=>handleFailure(e))}},[view,user,token,notice]);
- async function login(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{const data=await apiPost<{access_token:string}>('/auth/login',{email,password});storeToken(data.access_token);setPassword('');setToken(data.access_token);await refresh(data.access_token)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
- function logout(message=''){storeToken('');setToken('');setUser(null);setEvents([]);setAlerts([]);setModel(null);setFirms(null);setEvidence(null);setHistory([]);setSelected(null);setAnswer('');setQuestion('');setView('Overview');setArea(null);setAreas([]);setNotice('');setCopilot(false);setBusy(false);setError(message)}
- async function choose(e:ThermalEvent){const request=++evidenceRequest.current;setSelected(e);setEvidence(null);setEvidenceBusy(true);setHistory([]);try{const [data,h]=await Promise.all([apiGet<Evidence>('/events/'+e.id+'/evidence',token),apiGet<ThermalEvent[]>('/events/'+e.id+'/history',token)]);if(request===evidenceRequest.current){setEvidence(data);setHistory(h)}}catch(err){if(request===evidenceRequest.current)handleFailure(err)}finally{if(request===evidenceRequest.current)setEvidenceBusy(false)}}
- async function ask(e:FormEvent){e.preventDefault();setChatBusy(true);try{const data=await apiPost<CopilotResponse>('/copilot/chat',{question,event_id:selected?.id},token,45000);setChatMode(data.mode);setAnswer(data.answer+'\n\n— '+modeNote(data.mode))}catch(err){handleFailure(err)}finally{setChatBusy(false)}}
- // The copilot explains existing stored evidence only; the mode line
- // makes the answer source explicit so generated text is never
- // presented as ground truth.
- function modeNote(mode:string){return mode==='ollama'?'Answered by the local Ollama model from system evidence only.':'Deterministic fallback (Ollama unavailable) — summarized from stored event facts only.'}
- // ------------------------------------------------------------
- // FIRMS synchronization. ingested=0 is a SUCCESS (no new
- // observations in the window); the full totals are reported.
- // ------------------------------------------------------------
- async function syncFirms(){setSyncBusy(true);setError('');try{const r=await apiPost<FirmsSyncResponse>('/firms/sync',{},token,180000);setNotice(`FIRMS synchronization completed. ${r.ingested} new observation${r.ingested===1?'':'s'} ingested, ${r.rejected} rejected · ${r.events} total event${r.events===1?'':'s'} (${r.osm_context_available_events} with OSM context, ${r.satellite_context_available_events} with satellite context).`);apiGet<FirmsStatus>('/firms/status',token).then(setFirms).catch(()=>{});await refresh()}catch(e){handleFailure(e)}finally{setSyncBusy(false)}}
- // ------------------------------------------------------------
- // Model training (admin-only, manual). Never auto-triggered.
- // ------------------------------------------------------------
- async function trainModel(){setTrainBusy(true);setError('');try{const meta=await apiPost<{model_version?:string}>('/model/train',{},token,300000);await refresh();setNotice(`Trained MVP classifier${meta?.model_version?` (model version ${meta.model_version})`:''}. New event processing will use it. This is a decision-support model, not a validated production classifier.`)}catch(e){handleFailure(e)}finally{setTrainBusy(false)}}
- // Acknowledge one alert: optimistic single-row update, per-row busy
- // state to block double clicks, then a quiet authoritative re-sync.
- async function acknowledge(id:number){if(ackBusy!==null)return;setAckBusy(id);try{await apiPost('/alerts/'+id+'/acknowledge',{},token);setAlerts(prev=>prev.map(a=>a.id===id?{...a,status:'acknowledged'}:a));apiGet<Alert[]>('/alerts',token).then(setAlerts).catch(()=>{})}catch(e){handleFailure(e)}finally{setAckBusy(null)}}
- async function findArea(e:FormEvent){e.preventDefault();setBusy(true);try{const results=await apiGet<AreaResult[]>('/areas/search?name='+encodeURIComponent(areaQuery),token);setAreas(results);setNotice(results.length?'':'No matching Indian state or city found.')}catch(err){handleFailure(err)}finally{setBusy(false)}}
- const filtered=events.filter(e=>(!area||(e.longitude>=area.bounds[0]&&e.latitude>=area.bounds[1]&&e.longitude<=area.bounds[2]&&e.latitude<=area.bounds[3]))&&(filter==='All risk levels'||e.risk.risk_level===filter)&&(`${e.id} ${e.latitude} ${e.longitude} ${label(e.classification.predicted_class)}`).toLowerCase().includes(search.toLowerCase()));
- const mean=events.length?events.reduce((s,e)=>s+(typeof e.mean_frp==='number'?e.mean_frp:0),0)/events.length:0;
- const openAlerts=alerts.filter(a=>a.status==='open').length;
- if(!user)return <main className="login-page"><div className="login-art"><div className="brand"><span className="brand-mark"><Flame/></span>ThermaGuard <b>AI</b></div><div><span className="eyebrow">DETECT · UNDERSTAND · ACT</span><h1>A clearer view<br/>of thermal risk.</h1><p>Satellite observations. Traceable evidence.<br/>Informed decisions.</p><div className="orbit"><ScanLine size={90}/></div></div><small>SMART INDIA HACKATHON 2026</small></div><form className="login-form" onSubmit={login}><span className="eyebrow">THERMAL INTELLIGENCE WORKSPACE</span><h2>Welcome back</h2><p>Sign in to your monitoring workspace.</p>{healthError&&<div className="demo-note" role="alert"><b>{backendOk===false?'Backend unavailable.':'Health check failed.'}</b> {healthError}<button type="button" onClick={checkHealth}>Retry connection</button></div>}{demo&&<div className="demo-note"><b>DEMO DATA</b> · 10 deterministic detections. No real incident claims.<button type="button" onClick={()=>{setEmail('admin@demo.thermaguard.local');setPassword('DemoTherma2026!')}}>Use demo administrator</button><button type="button" onClick={()=>{setEmail('operator@demo.thermaguard.local');setPassword('DemoTherma2026!')}}>Use demo organization</button></div>}<label>Email<input type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)}/></label>{error&&<p role="alert" className="error">{error}</p>}<button className="primary" disabled={busy||backendOk===false}>{busy?'Connecting…':'Sign in'}<ArrowUpRight size={18}/></button><p className="small">Access is restricted to your assigned monitoring areas.</p></form></main>;
- return <div className="app-shell"><aside className="sidebar"><a className="brand" href="/" onClick={e=>{e.preventDefault();setView('Overview')}}><span className="brand-mark"><Flame size={24}/></span><span>ThermaGuard <b>AI</b><small>THERMAL INTELLIGENCE</small></span></a><div className="workspace"><ShieldCheck size={18}/><div>{user.role==='admin'?'National command':'Organization workspace'}<small>{user.role==='admin'?'Administrator access':'Assigned areas only'}</small></div></div><span className="nav-label">WORKSPACE</span><nav>{views.map((name,i)=>{const Icon=icons[i];return name==='Administration'&&user.role!=='admin'?null:<button key={name} className={view===name?'nav active':'nav'} onClick={()=>{setView(name);setSelected(null)}}><Icon size={19}/>{name}{name==='Alerts'&&openAlerts>0&&<span className="count">{openAlerts}</span>}</button>})}</nav><div className="sidebar-bottom"><div className="model-mini"><Database size={18}/><b>{model?.model_available?'Trained MVP classifier':'Model not trained'}</b><p>{model?.model_available?model.model_version:'Reviewed labels required'}</p><button onClick={()=>setView('System status')}>View readiness <ChevronRight size={14}/></button></div><div className="profile"><span className="avatar">{user.role==='admin'?'AD':'OP'}</span><div>{user.role==='admin'?'Administrator':'Operator'}<small>{demo?'Demo workspace':'Monitoring workspace'}</small></div><button aria-label="Sign out" onClick={()=>logout()}><LogOut size={17}/></button></div></div></aside><div className="main-shell"><header className="topbar"><div className="breadcrumb">Workspace <ChevronRight size={14}/><b>{view}</b></div><div className="top-actions">{demo&&<span className="demo-tag">DEMO DATA</span>}<button aria-label="Open alerts" onClick={()=>setView('Alerts')}><Bell size={19}/></button><span className="avatar small-avatar">{user.role==='admin'?'AD':'OP'}</span></div></header><main className="content"><div className="page-title"><div><span className="eyebrow">MONITORING WORKSPACE</span><h1>{view==='Overview'?'Thermal overview':view}</h1><p>{view==='Overview'?'From satellite detections to evidence-informed decisions.':view==='Event explorer'?'Explore observations, context, and risk evidence.':view==='System status'?'Provider availability and model readiness, without assumptions.':'Monitor and manage your thermal intelligence workspace.'}</p></div><div className="title-actions"><button className="button" onClick={()=>refresh()} disabled={busy}><RefreshCw size={16} className={busy?'spin':''}/>Refresh</button><button className="primary" onClick={()=>setCopilot(true)}><Sparkles size={16}/>Ask copilot</button></div></div>{error&&<div className="error" role="alert">{error}<button aria-label="Dismiss error" onClick={()=>setError('')}><X size={16}/></button></div>}{notice&&<div className="notice" role="status">{notice}<button aria-label="Dismiss notice" onClick={()=>setNotice('')}><X size={16}/></button></div>}
- {(view==='Overview'||view==='Event explorer')&&<><div className="stats"><Stat title="Monitored events" value={String(events.length).padStart(2,'0')} detail={`${events.reduce((s,e)=>s+(e.detection_count||0),0)} satellite detections${demo?' · demo':''}`} icon={<ScanLine/>}/><Stat title="Critical events" value={String(events.filter(e=>e.risk.risk_level==='Critical').length).padStart(2,'0')} detail="Risk score above 80" icon={<Flame/>} accent="red"/><Stat title="Mean fire radiative power" value={mean?mean.toFixed(1):'0.0'} unit="MW" detail="Average of event means" icon={<Activity/>}/><Stat title="Open alerts" value={String(openAlerts).padStart(2,'0')} detail="Assigned organization notifications" icon={<Bell/>} accent="amber"/></div><section className="map-section"><div className="section-head"><div><h2><MapPinned size={18}/>Event intelligence map</h2><span>{user.role==='admin'?'India · all monitored areas':'Your assigned monitoring areas'}</span></div><select aria-label="Risk filter" value={filter} onChange={e=>setFilter(e.target.value)}>{['All risk levels','Critical','High','Medium','Normal'].map(r=><option key={r}>{r}</option>)}</select></div><form className="area-search" onSubmit={findArea}><label>State / city<input aria-label="State or city" value={areaQuery} onChange={e=>setAreaQuery(e.target.value)} placeholder="Search an Indian state or city" minLength={2} required/></label><button className="button" disabled={busy}>Find area</button>{areas.length>0&&<select aria-label="Select geographic area" value={area?.name||''} onChange={e=>setArea(areas.find(a=>a.name===e.target.value)||null)}><option value="">All assigned areas</option>{areas.map(a=><option key={a.name}>{a.name}</option>)}</select>}{area&&<button type="button" className="button" onClick={()=>setArea(null)}>Clear area</button>}</form><div className="map-grid"><div className="map"><MapView events={filtered} selected={selected} onSelect={choose}/><div className="map-label"><Layers size={15}/>{demo?'DEMO OBSERVATIONS':'THERMAL OBSERVATIONS'}</div><div className="map-legend">{['Critical','High','Medium','Normal'].map(r=><span key={r}><i className={r.toLowerCase()}/>{r}</span>)}<span>Color = risk · all untrained events unclassified</span></div></div><aside className="event-list"><div className="event-list-title"><h3>Monitored events <span>{filtered.length}</span></h3><small>Ranked by decision-support risk</small></div>{busy&&!events.length&&<p className="empty">Loading events…</p>}{filtered.map(e=><button key={e.id} className={'event-row '+(selected?.id===e.id?'selected':'')} onClick={()=>choose(e)}><div className="event-row-top"><span className="event-number">{e.is_demo?'DEMO · ':''}TG / {String(events.indexOf(e)+1).padStart(3,'0')}</span><Badge level={e.risk.risk_level}/></div><h3>{label(e.classification.predicted_class)}<ChevronRight size={16}/></h3><p>{num(e.latitude,3,'?')}° N · {num(e.longitude,3,'?')}° E</p><div className="event-row-bottom"><span><Flame size={13}/>{num(e.mean_frp)} MW</span><span>{e.detection_count??'—'} detections</span></div></button>)}{!busy&&!filtered.length&&<p className="empty">{events.length?'No events match this view.':'No events available. Synchronize FIRMS as administrator to ingest observations.'}</p>}</aside></div><div className="map-footer"><span>NASA FIRMS · near-real-time satellite-derived thermal anomalies</span><span>{demo?'Fixture dates: 10–11 Sep 2026':'Observations reflect satellite overpass times'}</span></div></section><section className="panel table-panel"><div className="section-head"><h2>Event register</h2><label className="search"><Search size={16}/><input aria-label="Search events" placeholder="Search ID or coordinates…" value={search} onChange={e=>setSearch(e.target.value)}/></label></div><div className="table-scroll"><table><thead><tr><th>Event</th><th>Classification</th><th>Risk</th><th>Mean FRP</th><th>Model confidence</th><th>Last observed</th></tr></thead><tbody>{filtered.map(e=><tr key={e.id} onClick={()=>choose(e)}><td><button className="text-button" onClick={()=>choose(e)}>{e.is_demo?'DEMO · ':''}TG / {String(events.indexOf(e)+1).padStart(3,'0')}</button>{e.is_demo&&<small>DEMO</small>}</td><td>{label(e.classification.predicted_class)}</td><td><Badge level={e.risk.risk_level}/></td><td>{num(e.mean_frp)} MW</td><td>{typeof e.classification.classification_confidence==='number'?(e.classification.classification_confidence*100).toFixed(1)+'%':'Unavailable'}</td><td>{fmtTime(e.last_seen_time)}</td></tr>)}{!filtered.length&&<tr><td colSpan={6}>{busy?'Loading events…':'No events match this view.'}</td></tr>}</tbody></table></div></section></>}
- {view==='Analytics'&&<section className="panel analytics"><div className="section-head"><h2>Observed event trend</h2><select aria-label="Analytics period" value={days} onChange={e=>setDays(e.target.value)}><option value="1">24 hours</option><option value="7">7 days</option><option value="30">30 days</option><option value="365">365 days</option></select></div><p>{demo?'DEMO DATA · Window ends at the latest fixture observation.':'Only available observations appear; no missing dates are inferred.'}</p>{trendsAvailable?trends.length?<div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={trends}><CartesianGrid strokeDasharray="3 3" stroke="#e6eaed"/><XAxis dataKey="date"/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="events" fill="#147e71" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div>:<p className="empty">{trendsBusy?'Loading trend…':'No observations in this period.'}</p>:<p className="empty">{trendsBusy?'Loading trend…':`Insufficient historical data${trendsReason?` (${trendsReason.replaceAll('_',' ')})`:''}. No chart is shown instead of an incomplete one.`}</p>}<div className="risk-breakdown">{['Critical','High','Medium','Normal'].map(r=><div key={r}><Badge level={r}/><strong>{events.filter(e=>e.risk.risk_level===r).length}</strong><span>All stored events</span></div>)}</div></section>}
- {view==='Alerts'&&<section className="panel"><div className="section-head"><h2>Organization alerts</h2><span>{openAlerts} open</span></div>{alerts.map(a=><div className="alert-row" key={a.id}><Bell/><div><h3>{a.is_demo?'Demo · ':''}{a.risk_level} risk notification</h3><p>{a.event_id}</p><small>{a.status==='acknowledged'?'Acknowledged':'Open'} · notified: {a.notification_status||'Unknown'} · {fmtTime(a.created_at)}</small></div><Badge level={a.risk_level}/><button className="button" disabled={a.status==='acknowledged'||ackBusy===a.id} onClick={()=>acknowledge(a.id)}>{a.status==='acknowledged'?'Acknowledged':ackBusy===a.id?'Acknowledging…':'Acknowledge'}</button></div>)}{!alerts.length&&<p className="empty">{busy?'Loading alerts…':'No alerts in your assigned scope.'}</p>}</section>}
- {view==='System status'&&<div className="status-grid"><section className="panel status-card"><Database/><h2>Classification model</h2><StatusBadge state={model?.model_available?'REAL':'UNAVAILABLE'}/><p>{model?.model_available?'Trained MVP classifier on reviewed observations. Not a scientifically validated production model.':model?.reason||'Model status unavailable.'}</p><dl><dt>Reviewed eligible events</dt><dd>{model?.eligible_labeled_rows??'Unavailable'}</dd><dt>Model version</dt><dd>{model?.model_version||'Unavailable'}</dd><dt>Feature version</dt><dd>{model?.feature_version||'Unavailable'}</dd><dt>Training ready</dt><dd>{model?.training_ready?'Yes':'No'}</dd></dl>{user.role==='admin'&&<button className="button" disabled={!model?.training_ready||trainBusy} onClick={trainModel}><RefreshCw size={16} className={trainBusy?'spin':''}/>{trainBusy?'Training…':'Train reviewed dataset'}</button>}{user.role==='admin'&&!model?.training_ready&&<p className="small">Training requires the reviewed-label gate (30+ rows, all five classes, 10 split groups). Label candidates via the review workflow — do not force it.</p>}</section> <section className="panel status-card"><Activity/><h2>Data providers</h2><dl><dt>NASA FIRMS</dt><dd><StatusBadge state={demo?'DEMO':firms?.configured?'REAL':'BLOCKED'}/><small style={{display:'block',textAlign:'right'}}>{firms?.last_success?`Last sync ${fmtTime(firms.last_success)}`:firms?.reason||'No synchronization performed'}</small></dd><dt>OSM context</dt><dd><StatusBadge state={events.some(e=>e.context.osm_context_available)?'REAL':'UNAVAILABLE'}/></dd><dt>Satellite context</dt><dd><StatusBadge state={demo?'BLOCKED':events.some(e=>e.context.satellite_context_available)?'REAL':'UNAVAILABLE'}/><small style={{display:'block',textAlign:'right'}}>{demo?'Blocked in demo mode':events.some(e=>e.context.satellite_context_available)?'Copernicus NDVI available':String(events.find(e=>e.context.reason)?.context.reason||'Copernicus credentials not configured')}</small></dd><dt>Copilot</dt><dd><StatusBadge state={chatMode==='ollama'?'REAL':'FALLBACK'}/><small style={{display:'block',textAlign:'right'}}>{chatMode==='ollama'?'Local Ollama responded':'Explains stored evidence; falls back when Ollama is unavailable'}</small></dd></dl>{user.role==='admin'&&<button className="button" disabled={syncBusy||demo} title={demo?'Disable DEMO_MODE on the backend to ingest real observations':'Ingest the latest NASA FIRMS observations'} onClick={syncFirms}><RefreshCw size={16} className={syncBusy?'spin':''}/>{syncBusy?'Synchronizing…':'Synchronize FIRMS'}</button>}{user.role==='admin'&&<p className="small">Zero ingested observations is a normal result when no new detections fall in the queried window — existing events are unchanged. Real ingestion is isolated from demo mode; provider keys stay on the backend.</p>}</section><section className="panel status-card"><Shield/><h2>Decision support</h2><p>Risk scores combine thermal severity, persistence, available proximity, and historical deviation. Missing context is explicit.</p><p>This scoring model is configurable and has not been scientifically validated. Classification confidence is a separate model output.</p></section></div>}
- {view==='Administration'&&user.role==='admin'&&<div className="admin-grid"><section className="panel status-card"><h2>Organizations</h2>{organizations.map(o=><p key={o.id}><b>#{o.id} · {o.name}</b><br/><small>{o.email}</small></p>)}{!organizations.length&&<p className="empty">No organizations registered.</p>}<AdminForm title="Create organization" fields={['name','email']} submit={async values=>{await apiPost('/admin/organizations',values,token);setNotice('Organization created')}} onError={handleFailure}/></section><section className="panel status-card"><h2>Area assignments</h2>{assignments.map(a=><p key={a.id}><b>{a.area_name}</b><br/><small>Organization #{a.organization_id} · {a.bounds.join(', ')}</small></p>)}{!assignments.length&&<p className="empty">No areas assigned.</p>}<AdminForm title="Assign area" fields={['organization_id','area_name','bounds']} submit={async values=>{await apiPost('/admin/assignments',{...values,organization_id:Number(values.organization_id),bounds:values.bounds.split(',').map(Number)},token);setNotice('Area assigned')}} onError={handleFailure}/><p className="small">Bounds: west, south, east, north. Alert minimum defaults to High.</p></section><section className="panel status-card"><h2>Alert threshold</h2><p>Default: 80. Changes apply to your active dataset; existing alerts remain in the audit record.</p><AdminForm title="Update threshold" fields={['threshold']} submit={async values=>{await apiPost('/admin/threshold',{threshold:Number(values.threshold)},token);setNotice('Threshold updated');await refresh()}} onError={handleFailure}/><h2>Connect registered user</h2><AdminForm title="Assign user" fields={['email','organization_id']} submit={async values=>{await apiPost('/admin/users/assign',{email:values.email,organization_id:Number(values.organization_id)},token);setNotice('User assigned')}} onError={handleFailure}/></section></div>}
- <footer className="footer">ThermaGuard AI <span>DETECT <ChevronRight size={11}/> UNDERSTAND <ChevronRight size={11}/> CLASSIFY <ChevronRight size={11}/> ASSESS RISK <ChevronRight size={11}/> ACT</span><small>Evidence before action.</small></footer></main></div>
- {selected&&<div className="drawer-backdrop" onClick={()=>setSelected(null)}><aside className="drawer" role="dialog" aria-modal="true" aria-label="Event evidence" onClick={e=>e.stopPropagation()}><div className="drawer-head"><span className="eyebrow">EVENT EVIDENCE</span><button autoFocus aria-label="Close event evidence" onClick={()=>setSelected(null)}><X/></button></div><h2>{label(selected.classification.predicted_class)}</h2><p className="mono">{selected.id}</p>{selected.is_demo&&<div className="demo-note">DEMO DATA · Deterministic fixture, not a real incident.</div>}<div className="risk-hero"><div><span>Decision-support risk</span><strong>{num(selected.risk.risk_score,0,'—')}<small>/100</small></strong></div><Badge level={selected.risk.risk_level}/></div><h3>Detected facts {selected.is_demo?'· demo':''}</h3><dl><dt>Mean FRP</dt><dd>{num(selected.mean_frp)} MW</dd><dt>Maximum FRP</dt><dd>{num(selected.max_frp)} MW</dd><dt>Mean brightness</dt><dd>{num(selected.mean_brightness)} K</dd><dt>Observations</dt><dd>{selected.detection_count??'Unavailable'}</dd><dt>Duration</dt><dd>{num(selected.duration_hours)} hours</dd><dt>Persistence</dt><dd>{selected.persistence_days!=null?`${selected.persistence_days} day${selected.persistence_days===1?'':'s'}`:'Unavailable'}</dd><dt>Coordinates</dt><dd>{num(selected.latitude,4,'?')}, {num(selected.longitude,4,'?')}</dd><dt>First observed</dt><dd>{fmtTime(selected.start_time)}</dd><dt>Last observed</dt><dd>{fmtTime(selected.last_seen_time)}</dd></dl><h3>Model interpretation</h3><p>{selected.classification.reason||label(selected.classification.predicted_class)}</p><p>Confidence: {typeof selected.classification.classification_confidence==='number'?(selected.classification.classification_confidence*100).toFixed(1)+'%':'Unavailable'}{selected.classification.model_version?` · Model version ${selected.classification.model_version}`:' · Untrained model'}</p><h3>Risk factors</h3>{Object.entries(selected.risk.risk_factors||{}).map(([k,v])=><div className="factor" key={k}><span>{label(k)}</span><b>+{num(v)}</b><progress aria-label={label(k)} max="100" value={typeof v==='number'?v:0}/></div>)}<h3>Context and history</h3><p>OSM: {selected.context.osm_context_available?`Available${selected.context.landuse_class?` (${label(String(selected.context.landuse_class))})`:''}${selected.context.nearby_facility_count!=null?` · ${selected.context.nearby_facility_count} nearby facilities`:''}`:`Unavailable${selected.context.osm_reason?` (${selected.context.osm_reason.replaceAll('_',' ')})`:''}`} · Satellite: {selected.context.satellite_context_available?`NDVI ${typeof selected.context.ndvi==='number'?selected.context.ndvi.toFixed(3):'Unavailable'} (${selected.context.acquisition_date||'date unavailable'}, ${selected.context.provider||'Sentinel-2 L2A'})`:`unavailable (${String(selected.context.reason||'not configured').replaceAll('_',' ')})`}</p><p>Historical baseline: {selected.risk.abnormality.baseline_available?`${selected.risk.abnormality.abnormality_status?.replaceAll('_',' ')}${typeof selected.risk.abnormality.abnormality_score==='number'?` (deviation ${selected.risk.abnormality.abnormality_score})`:''}`:'Unavailable'}. {history.length?`${history.length} earlier nearby event${history.length===1?'':'s'}.`:'No earlier nearby events.'}</p><p className="small">Missing: {selected.risk.missing_context?.length?selected.risk.missing_context.map(label).join(', '):'none'}. Risk is not a scientifically validated danger estimate.</p><details><summary>Raw evidence and provenance</summary><pre>{evidenceBusy?'Loading evidence…':evidence?JSON.stringify({event:evidence.event,detected_facts:evidence.detected_facts,model_interpretation:evidence.model_interpretation,risk_assessment:evidence.risk_assessment},null,2):'Evidence unavailable.'}</pre></details><button className="primary" onClick={()=>setCopilot(true)}><Sparkles size={16}/>Explain this event</button></aside></div>}
- {copilot&&<div className="copilot" role="dialog" aria-label="ThermaGuard copilot"><div className="section-head"><h2><Sparkles size={18}/>Evidence copilot</h2><button autoFocus aria-label="Close copilot" onClick={()=>setCopilot(false)}><X size={18}/></button></div><p className="small">{selected?'Selected event context':'Up to 10 highest-risk events in your scope'}. The copilot only explains existing stored evidence — it cannot classify events, change risk scores, or modify records. Answers are not ground truth.</p><div className="copilot-answer">{chatBusy?'Analyzing stored evidence…':answer||'Ask about risk factors, classifications, or missing evidence. If Ollama is unavailable, a factual summary is provided.'}</div><form onSubmit={ask}><input aria-label="Copilot question" value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Why is this event high risk?" required maxLength={1000}/><button className="primary" disabled={chatBusy} aria-label="Send question"><Send size={18}/></button></form></div>}
- </div>
+
+  // Keyboard navigation & accessibility
+  useEffect(() => {
+    if (!selected && !copilot) return;
+    const handle = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (copilot) setCopilot(false);
+        else setSelected(null);
+      }
+    };
+    document.addEventListener('keydown', handle);
+    return () => document.removeEventListener('keydown', handle);
+  }, [selected, copilot]);
+
+  // Analytics Trends
+  useEffect(() => {
+    if (!token) return;
+    const request = ++trendsRequest.current;
+    setTrendsBusy(true);
+    apiGet<AnalyticsResponse>('/analytics/trends?days=' + days, token)
+      .then((data) => {
+        if (request !== trendsRequest.current) return;
+        if (Array.isArray(data)) {
+          setTrends(data);
+          setTrendsAvailable(true);
+          setTrendsReason('');
+        } else {
+          setTrends([]);
+          setTrendsAvailable(false);
+          setTrendsReason(data.reason || 'insufficient_history');
+        }
+      })
+      .catch((e) => {
+        if (request === trendsRequest.current) {
+          setTrends([]);
+          setTrendsAvailable(false);
+          setTrendsReason((e as Error).message);
+        }
+      })
+      .finally(() => {
+        if (request === trendsRequest.current) setTrendsBusy(false);
+      });
+  }, [token, days]);
+
+  // FIRMS Status
+  useEffect(() => {
+    if (token) apiGet<FirmsStatus>('/firms/status', token).then(setFirms).catch(() => {});
+  }, [token]);
+
+  // EONET hazard layer
+  useEffect(() => {
+    if (!token || !showHazards || mapMode !== 'events') return;
+    let cancelled = false;
+    setHazardsAvailable(null);
+    fetchEonetEvents(token)
+      .then((r) => {
+        if (cancelled) return;
+        setHazards(r.events || []);
+        setHazardsAvailable(r.available);
+      })
+      .catch(() => {
+        if (!cancelled) setHazardsAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, showHazards, mapMode]);
+
+  // Notification preferences
+  useEffect(() => {
+    if (!token) return;
+    apiGet<NotificationPreferences>('/auth/notifications', token).then(setNotif).catch(() => {});
+  }, [token, notice]);
+
+  // Provider health status
+  useEffect(() => {
+    if ((view === 'Providers' || view === 'Overview' || view === 'System status') && token) {
+      fetchProviderStatus(token)
+        .then(setProviderHealth)
+        .catch(() => setProviderHealth(null));
+    }
+  }, [view, token, notice]);
+
+  // Admin data
+  useEffect(() => {
+    if (view === 'Settings' && user?.role === 'admin' && token) {
+      Promise.all([
+        apiGet<Organization[]>('/admin/organizations', token),
+        apiGet<Assignment[]>('/admin/assignments', token),
+      ])
+        .then(([o, a]) => {
+          setOrganizations(o);
+          setAssignments(a);
+        })
+        .catch((e) => handleFailure(e));
+    }
+  }, [view, user, token, notice]);
+
+  // Login handler
+  async function login(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const data = await apiPost<{ access_token: string }>('/auth/login', {
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      healthRequest.current++;
+      setBackendOk(true);
+      setHealthError('');
+      storeToken(data.access_token);
+      setPassword('');
+      setShowPassword(false);
+      setToken(data.access_token);
+      await refresh(data.access_token);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Signup handler
+  async function signup(e: FormEvent) {
+    e.preventDefault();
+    setSignupError('');
+    setSignupSuccess('');
+    if (signupPassword.length < 12) {
+      setSignupError('Password must be at least 12 characters.');
+      return;
+    }
+    if (signupPassword !== signupConfirm) {
+      setSignupError('Passwords do not match.');
+      return;
+    }
+    setSignupBusy(true);
+    try {
+      await apiPost<{ message: string }>('/auth/register', {
+        email: signupEmail.trim().toLowerCase(),
+        password: signupPassword,
+      });
+      setSignupSuccess('Account registered. An administrator will assign your area before events become visible. You may now sign in.');
+      setSignupEmail('');
+      setSignupPassword('');
+      setSignupConfirm('');
+      setShowSignupPassword(false);
+      // Redirect to login after short delay so user reads the message
+      setTimeout(() => setUnauthView('login'), 3000);
+    } catch (e) {
+      setSignupError((e as Error).message);
+    } finally {
+      setSignupBusy(false);
+    }
+  }
+
+  // Logout handler
+  function logout(message = '') {
+    workspaceRequest.current++;
+    storeToken('');
+    setToken('');
+    setUser(null);
+    setAuthStatus('unauthenticated');
+    setUnauthView('landing');
+    setEvents([]);
+    setAlerts([]);
+    setModel(null);
+    setFirms(null);
+    setEvidence(null);
+    setHistory([]);
+    setSelected(null);
+    setAnswer('');
+    setQuestion('');
+    setView('Overview');
+    setArea(null);
+    setAreas([]);
+    setNotice('');
+    setCopilot(false);
+    setBusy(false);
+    setError(message);
+  }
+
+  // Select event
+  async function choose(e: ThermalEvent) {
+    const request = ++evidenceRequest.current;
+    setSelected(e);
+    setEvidence(null);
+    setEvidenceBusy(true);
+    setHistory([]);
+    try {
+      const [data, h] = await Promise.all([
+        apiGet<Evidence>('/events/' + e.id + '/evidence', token),
+        apiGet<ThermalEvent[]>('/events/' + e.id + '/history', token),
+      ]);
+      if (request === evidenceRequest.current) {
+        setEvidence(data);
+        setHistory(h);
+      }
+    } catch (err) {
+      if (request === evidenceRequest.current) handleFailure(err);
+    } finally {
+      if (request === evidenceRequest.current) setEvidenceBusy(false);
+    }
+  }
+
+  // Ask Copilot
+  async function ask(e: FormEvent) {
+    e.preventDefault();
+    setChatBusy(true);
+    try {
+      const data = await apiPost<CopilotResponse>(
+        '/copilot/chat',
+        { question, event_id: selected?.id },
+        token,
+        45000
+      );
+      setChatMode(data.mode);
+      setAnswer(data.answer + '\n\n— ' + modeNote(data.mode, data.reason));
+    } catch (err) {
+      handleFailure(err);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  function modeNote(mode: string, reason?: string) {
+    return mode === 'gemini'
+      ? 'Answered by the Google Gemini model from verified system evidence only.'
+      : 'Stored evidence summary. ' +
+          ({
+            disabled_or_unconfigured: 'Gemini is disabled or unconfigured.',
+            quota_or_rate_limited: 'Gemini quota or rate limit reached.',
+            authentication_failed: 'Gemini authentication failed.',
+            permission_denied: 'Gemini access was denied.',
+            model_unavailable: 'The configured Gemini model is unavailable.',
+            timeout: 'Gemini timed out. Please retry.',
+            network_error: 'Could not connect to Gemini.',
+            no_events: 'No events are available in your scope.',
+          }[reason || ''] || 'Gemini could not answer. Please retry.');
+  }
+
+  // FIRMS sync
+  async function syncFirms() {
+    setSyncBusy(true);
+    setError('');
+    try {
+      const r = await apiPost<FirmsSyncResponse>('/firms/sync', {}, token, 180000);
+      setNotice(
+        `FIRMS synchronization completed. ${r.ingested} new observation${
+          r.ingested === 1 ? '' : 's'
+        } ingested, ${r.rejected} rejected · ${r.events} total event${
+          r.events === 1 ? '' : 's'
+        } (${r.osm_context_available_events} with OSM context, ${
+          r.satellite_context_available_events
+        } with satellite context).`
+      );
+      apiGet<FirmsStatus>('/firms/status', token).then(setFirms).catch(() => {});
+      await refresh();
+    } catch (e) {
+      handleFailure(e);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  // Train model
+  async function trainModel() {
+    setTrainBusy(true);
+    setError('');
+    try {
+      const meta = await apiPost<{ model_version?: string }>('/model/train', {}, token, 300000);
+      await refresh();
+      setNotice(
+        `Trained MVP classifier${
+          meta?.model_version ? ` (model version ${meta.model_version})` : ''
+        }. New event processing will use it. This is a decision-support model, not a validated production classifier.`
+      );
+    } catch (e) {
+      handleFailure(e);
+    } finally {
+      setTrainBusy(false);
+    }
+  }
+
+  // Acknowledge alert
+  async function acknowledge(id: number) {
+    if (ackBusy !== null) return;
+    setAckBusy(id);
+    try {
+      await apiPost('/alerts/' + id + '/acknowledge', {}, token);
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status: 'acknowledged' } : a))
+      );
+      apiGet<Alert[]>('/alerts', token).then(setAlerts).catch(() => {});
+    } catch (e) {
+      handleFailure(e);
+    } finally {
+      setAckBusy(null);
+    }
+  }
+
+  // Save notification preferences
+  async function saveNotif(next: NotificationPreferences) {
+    setNotifBusy(true);
+    try {
+      const saved = await apiPut<NotificationPreferences>('/auth/notifications', next, token);
+      setNotif(saved);
+      setNotice(
+        saved.notifications_enabled
+          ? 'Notification preferences saved. You will be alerted for qualifying events within your radius.'
+          : 'Notification preferences saved. Notifications are off.'
+      );
+    } catch (e) {
+      handleFailure(e);
+    } finally {
+      setNotifBusy(false);
+    }
+  }
+
+  // Area search
+  async function findArea(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const results = await apiGet<AreaResult[]>(
+        '/areas/search?name=' + encodeURIComponent(areaQuery),
+        token
+      );
+      setAreas(results);
+      setNotice(results.length ? '' : 'No matching Indian state or city found.');
+    } catch (err) {
+      handleFailure(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Filtered Events Calculation
+  const riskBandFiltered = events.filter(
+    (e) =>
+      (!area ||
+        (e.longitude >= area.bounds[0] &&
+          e.latitude >= area.bounds[1] &&
+          e.longitude <= area.bounds[2] &&
+          e.latitude <= area.bounds[3])) &&
+      (filter === 'All risk levels' || e.risk.risk_level === filter)
+  );
+
+  const contextSatisfied = (e: ThermalEvent) =>
+    ({
+      'All events': true,
+      'OSM context': e.context?.osm_context_available === true,
+      'Satellite context': e.context?.satellite_context_available === true,
+      Weather: e.context?.weather?.status === 'available',
+      'Air quality': e.context?.air_quality?.status === 'available',
+      Location: e.context?.location?.status === 'available',
+      'EONET match': e.context?.eonet?.status === 'available' && e.context?.eonet?.matched === true,
+      'Missing context': !(e.context?.osm_context_available && e.context?.satellite_context_available),
+    }[contextFilter] ?? true);
+
+  const sourceSatisfied = (e: ThermalEvent) =>
+    ({
+      'All sensors': true,
+      'VIIRS only': Object.keys(e.source_counts || {}).some((s) => s.toLowerCase().includes('viirs')),
+      'MODIS only': Object.keys(e.source_counts || {}).some((s) => s.toLowerCase().includes('modis')),
+      'Cross-sensor': e.sensor_summary?.cross_sensor_confirmed === true,
+    }[sourceFilter] ?? true);
+
+  const cutoff =
+    Date.now() -
+    ({
+      'All time': Infinity,
+      '24 hours': 864e5,
+      '7 days': 7 * 864e5,
+      '30 days': 30 * 864e5,
+    }[dateFilter] || Infinity);
+
+  const filtered = riskBandFiltered.filter(
+    (e) =>
+      contextSatisfied(e) &&
+      sourceSatisfied(e) &&
+      (dateFilter === 'All time' || new Date(e.last_seen_time).getTime() >= cutoff) &&
+      `${e.id} ${e.latitude} ${e.longitude} ${e.context?.location?.display_name || ''} ${label(
+        e.classification?.predicted_class
+      )}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+  );
+
+  const openAlerts = alerts.filter((a) => a.status === 'open').length;
+
+  // Auth state machine rendering
+  if (authStatus === 'loading') {
+    return (
+      <main className="auth-loading-screen" aria-label="Loading ThermaGuard">
+        <div className="auth-loading-inner">
+          <div className="brand-mark auth-loading-logo">
+            <Flame size={28} />
+          </div>
+          <h2>ThermaGuard <b>AI</b></h2>
+          <p className="small text-muted">Restoring secure session…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (authStatus === 'unauthenticated') {
+    // Landing Page
+    if (unauthView === 'landing') {
+      return (
+        <LandingPage
+          onSignIn={() => setUnauthView('login')}
+          onSignUp={() => setUnauthView('signup')}
+          demoMode={demo}
+        />
+      );
+    }
+
+    // Signup Form
+    if (unauthView === 'signup') {
+      return (
+        <main className="login-page">
+          <div className="login-art">
+            <div className="brand">
+              <span className="brand-mark">
+                <Flame size={20} />
+              </span>
+              <span>
+                ThermaGuard <b>AI</b>
+              </span>
+            </div>
+            <div>
+              <span className="eyebrow">DETECT · UNDERSTAND · ACT</span>
+              <h1>
+                Request Operational
+                <br />
+                Access
+              </h1>
+              <p>
+                Create your account to monitor thermal anomalies within your assigned geographic jurisdiction.
+              </p>
+              <div className="orbit">
+                <Shield size={80} />
+              </div>
+            </div>
+            <small>SMART INDIA HACKATHON 2026 · OPERATIONAL DASHBOARD</small>
+          </div>
+
+          <form className="login-form" onSubmit={signup}>
+            <span className="eyebrow">NEW OPERATOR ACCOUNT</span>
+            <h2>Request access</h2>
+            <p>An administrator must assign your organization before events are visible.</p>
+
+            {healthError && (
+              <div className="error-banner" role="alert">
+                <span>
+                  <b>{backendOk === false ? 'Backend unreachable.' : 'Health check issue.'}</b> {healthError}
+                </span>
+                <button type="button" className="button" onClick={checkHealth}>
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {signupSuccess && (
+              <div className="success-banner" role="status">
+                {signupSuccess}
+              </div>
+            )}
+
+            <label>
+              Operational Email
+              <input
+                type="email"
+                autoComplete="email"
+                required
+                value={signupEmail}
+                onChange={(e) => setSignupEmail(e.target.value)}
+                placeholder="e.g. operator@agency.gov.in"
+              />
+            </label>
+
+            <label>
+              Password <span className="small text-muted">(min. 12 characters)</span>
+              <div className="auth-password-wrap">
+                <input
+                  type={showSignupPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  minLength={12}
+                  value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)}
+                  placeholder="At least 12 characters"
+                />
+                <button
+                  type="button"
+                  className="auth-password-toggle"
+                  aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowSignupPassword((v) => !v)}
+                  tabIndex={-1}
+                >
+                  {showSignupPassword ? '🙈' : '👁'}
+                </button>
+              </div>
+            </label>
+
+            <label>
+              Confirm Password
+              <div className="auth-password-wrap">
+                <input
+                  type={showSignupPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  value={signupConfirm}
+                  onChange={(e) => setSignupConfirm(e.target.value)}
+                  placeholder="Repeat password"
+                />
+              </div>
+            </label>
+
+            {signupError && <p role="alert" className="error-banner">{signupError}</p>}
+
+            <button className="primary" disabled={signupBusy} style={{ width: '100%', marginTop: '12px' }}>
+              {signupBusy ? 'Registering…' : 'Create Account'}
+              <ArrowUpRight size={18} />
+            </button>
+            <p className="small text-muted" style={{ marginTop: '14px' }}>
+              Already have an account?{' '}
+              <button
+                type="button"
+                className="auth-link-btn"
+                onClick={() => { setSignupError(''); setSignupSuccess(''); setUnauthView('login'); }}
+              >
+                Sign in
+              </button>
+            </p>
+          </form>
+        </main>
+      );
+    }
+
+    // Login Form (default unauthView === 'login')
+    return (
+      <main className="login-page">
+        <div className="login-art">
+          <div className="brand">
+            <span className="brand-mark">
+              <Flame size={20} />
+            </span>
+            <span>
+              ThermaGuard <b>AI</b>
+            </span>
+          </div>
+          <div>
+            <span className="eyebrow">DETECT · UNDERSTAND · ACT</span>
+            <h1>
+              Geospatial Thermal
+              <br />
+              Intelligence System
+            </h1>
+            <p>
+              Near-real-time satellite thermal anomaly monitoring, deterministic risk assessment, and traceable environmental decision support.
+            </p>
+            <div className="orbit">
+              <ScanLine size={80} />
+            </div>
+          </div>
+          <small>SMART INDIA HACKATHON 2026 · OPERATIONAL DASHBOARD</small>
+        </div>
+
+        <form className="login-form" onSubmit={login}>
+          <span className="eyebrow">COMMAND CONSOLE ACCESS</span>
+          <h2>Welcome back</h2>
+          <p>Authenticate with your operational credentials to access your thermal workspace.</p>
+
+          {healthError && (
+            <div className="error-banner" role="alert">
+              <span>
+                <b>{backendOk === false ? 'Backend unreachable.' : 'Health check issue.'}</b> {healthError}
+              </span>
+              <button type="button" className="button" onClick={checkHealth}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {demo && (
+            <div className="demo-note">
+              <b>DEMO BENCHMARK DATA ACTIVE</b> · Deterministic 10-event satellite fixture dataset.
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => {
+                    setEmail('admin@demo.thermaguard.local');
+                    setPassword('DemoTherma2026!');
+                  }}
+                >
+                  Admin Credentials
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => {
+                    setEmail('operator@demo.thermaguard.local');
+                    setPassword('DemoTherma2026!');
+                  }}
+                >
+                  Operator Credentials
+                </button>
+              </div>
+            </div>
+          )}
+
+          <label>
+            Operational Email
+            <input
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g. operator@demo.thermaguard.local"
+            />
+          </label>
+
+          <label>
+            Security Password
+            <div className="auth-password-wrap">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                onClick={() => setShowPassword((v) => !v)}
+                tabIndex={-1}
+              >
+                {showPassword ? '🙈' : '👁'}
+              </button>
+            </div>
+          </label>
+
+          {error && <p role="alert" className="error-banner">{error}</p>}
+
+          <button className="primary" disabled={busy} style={{ width: '100%', marginTop: '12px' }}>
+            {busy ? 'Establishing secure session…' : 'Sign in to Workspace'}
+            <ArrowUpRight size={18} />
+          </button>
+          <p className="small text-muted" style={{ marginTop: '14px' }}>
+            Access is restricted to assigned monitoring areas and role entitlements.
+            {' '}
+            <button
+              type="button"
+              className="auth-link-btn"
+              onClick={() => { setError(''); setUnauthView('signup'); }}
+            >
+              Request access
+            </button>
+            {' '}or{' '}
+            <button
+              type="button"
+              className="auth-link-btn"
+              onClick={() => { setError(''); setUnauthView('landing'); }}
+            >
+              Back to home
+            </button>
+          </p>
+        </form>
+      </main>
+    );
+  }
+
+  // Authenticated Command Dashboard
+  // At this point authStatus === 'authenticated', so user is always non-null.
+  // TypeScript can't track this through state, so we add a runtime guard.
+  if (!user) return null;
+  return (
+    <div className="app-shell">
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+        <a
+          className="brand"
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            setView('Overview');
+            setSelected(null);
+            setSidebarOpen(false);
+          }}
+        >
+          <span className="brand-mark">
+            <Flame size={20} />
+          </span>
+          <span>
+            ThermaGuard <b>AI</b>
+            <small>GEOSPATIAL INTELLIGENCE</small>
+          </span>
+        </a>
+
+        <div className="workspace-badge">
+          <ShieldCheck size={18} className="text-teal" />
+          <div>
+            <b>{user.role === 'admin' ? 'National Command' : 'Organization Hub'}</b>
+            <small>{user.role === 'admin' ? 'All national territories' : 'Assigned scope'}</small>
+          </div>
+        </div>
+
+        <span className="nav-label">COMMAND VIEWS</span>
+        <nav>
+          {VIEWS.map(({ name, icon: Icon }) => {
+            const isActive = view === name;
+            return (
+              <button
+                key={name}
+                type="button"
+                className={`nav-item ${isActive ? 'active' : ''}`}
+                onClick={() => {
+                  setView(name);
+                  setSelected(null);
+                  setSidebarOpen(false);
+                }}
+              >
+                <Icon size={18} />
+                <span>{name}</span>
+                {name === 'Alerts' && openAlerts > 0 && (
+                  <span className="nav-count">{openAlerts}</span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="model-mini">
+            <div className="model-mini-head">
+              <Database size={15} />
+              <span>{model?.model_available ? 'RandomForest MVP' : 'Model Pending'}</span>
+            </div>
+            <p>{model?.model_available ? `Version: ${model.model_version}` : 'Reviewed labels required'}</p>
+            <button
+              type="button"
+              className="model-mini-link"
+              onClick={() => {
+                setView('Review / Labels');
+                setSidebarOpen(false);
+              }}
+            >
+              Inspect Model Readiness <ChevronRight size={13} />
+            </button>
+          </div>
+
+          <div className="profile-card">
+            <span className="avatar">{user.role === 'admin' ? 'AD' : 'OP'}</span>
+            <div>
+              <b>{user.role === 'admin' ? 'Administrator' : 'Field Operator'}</b>
+              <small>{demo ? 'Demo Environment' : 'Live Operations'}</small>
+            </div>
+            <button
+              type="button"
+              className="profile-logout-btn"
+              aria-label="Sign out"
+              onClick={() => logout()}
+              title="Sign out of workspace"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Container */}
+      <div className="main-shell">
+        {/* Topbar */}
+        <header className="topbar">
+          <div className="topbar-left">
+            <button
+              type="button"
+              className="mobile-menu-toggle"
+              aria-label="Toggle navigation sidebar"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              <Menu size={20} />
+            </button>
+            <div className="breadcrumb">
+              <span>ThermaGuard</span>
+              <ChevronRight size={13} />
+              <b>{view}</b>
+            </div>
+          </div>
+
+          <div className="topbar-right">
+            <div className="system-status-indicator">
+              <span className="status-dot" />
+              <span>{demo ? 'DEMO FIXTURES' : 'LIVE TELEMETRY'}</span>
+            </div>
+
+            <button
+              type="button"
+              className="primary"
+              onClick={() => setCopilot(true)}
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+            >
+              <Sparkles size={14} />
+              Ask Copilot
+            </button>
+
+            <button
+              type="button"
+              className="topbar-bell-btn"
+              aria-label="View open alerts"
+              onClick={() => setView('Alerts')}
+            >
+              <Bell size={18} />
+              {openAlerts > 0 && <span className="bell-badge-pill">{openAlerts}</span>}
+            </button>
+
+            <span className="avatar small-avatar">{user.role === 'admin' ? 'AD' : 'OP'}</span>
+          </div>
+        </header>
+
+        {/* Page Content View */}
+        <main className="content">
+          {/* Header Title Bar */}
+          <div className="page-title">
+            <div>
+              <span className="eyebrow">GEOSPATIAL INTELLIGENCE PLATFORM</span>
+              <h1>
+                {view === 'Overview'
+                  ? 'Operational Overview & Surveillance'
+                  : view === 'Live Map'
+                  ? 'Live Geospatial Intelligence Map'
+                  : view === 'Events'
+                  ? 'Thermal Event Explorer'
+                  : view === 'Alerts'
+                  ? 'Incident Notification Center'
+                  : view === 'Analytics'
+                  ? 'Surveillance Analytics & Risk Trends'
+                  : view === 'AI Copilot'
+                  ? 'ThermaGuard AI Evidence Copilot'
+                  : view === 'Providers'
+                  ? 'External Providers & Telemetry'
+                  : view === 'Review / Labels'
+                  ? 'Machine Learning Model & Review Center'
+                  : 'Workspace Configuration'}
+              </h1>
+              <p>
+                {view === 'Overview'
+                  ? 'Near-real-time satellite thermal detections, risk scoring, and multi-source context.'
+                  : view === 'Live Map'
+                  ? 'Satellite thermal hotspots, natural earth hazards, and industrial infrastructure overlays.'
+                  : view === 'Events'
+                  ? 'Sortable event register with multi-sensor verification and context completeness.'
+                  : view === 'Alerts'
+                  ? 'Organization dispatch logs, email audit trail, and push delivery status.'
+                  : view === 'Analytics'
+                  ? 'Historical observation patterns, risk band distributions, and sensor coverage.'
+                  : view === 'AI Copilot'
+                  ? 'Plain-language operational explanations grounded strictly in verified event data.'
+                  : view === 'Providers'
+                  ? 'Real-time telemetry, latency metrics, and API integration readiness.'
+                  : view === 'Review / Labels'
+                  ? 'RandomForest classifier training gate (30+ rows, 5 classes) and data safeguards.'
+                  : 'Manage notification radius, coordinates, and organization assignments.'}
+              </p>
+            </div>
+
+            <div className="title-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => refresh()}
+                disabled={busy}
+              >
+                <RefreshCw size={14} className={busy ? 'spin' : ''} />
+                Refresh Data
+              </button>
+            </div>
+          </div>
+
+          {/* Feedback Banners */}
+          {error && (
+            <div className="error-banner" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                aria-label="Dismiss error banner"
+                onClick={() => setError('')}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+
+          {notice && (
+            <div className="notice-banner" role="status">
+              <span>{notice}</span>
+              <button
+                type="button"
+                aria-label="Dismiss notice banner"
+                onClick={() => setNotice('')}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+
+          {/* VIEW: Overview */}
+          {view === 'Overview' && (
+            <>
+              <OverviewKPIs
+                events={events}
+                alerts={alerts}
+                model={model}
+                providerHealth={providerHealth}
+                busy={busy}
+                demo={demo}
+              />
+
+              {/* Map Section */}
+              <section className="map-intelligence-section">
+                <div className="map-section-head">
+                  <div className="map-section-title-group">
+                    <MapPinned size={18} className="text-teal" />
+                    <h2>Geospatial Surveillance Map</h2>
+                    <span className="text-muted small">
+                      {user.role === 'admin' ? 'National coverage' : 'Assigned territory'}
+                    </span>
+                  </div>
+
+                  <div className="map-section-controls">
+                    <select
+                      aria-label="Map mode"
+                      value={mapMode}
+                      onChange={(e) => setMapMode(e.target.value)}
+                    >
+                      <option value="events">Clustered Events</option>
+                      <option value="raw">Raw FIRMS Hotspots</option>
+                    </select>
+
+                    <select
+                      aria-label="Risk filter"
+                      value={filter}
+                      disabled={mapMode === 'raw'}
+                      onChange={(e) => setFilter(e.target.value)}
+                    >
+                      {['All risk levels', 'Critical', 'High', 'Medium', 'Normal'].map((r) => (
+                        <option key={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="map-viewport-grid">
+                  <div className="map-container-relative">
+                    <MapView
+                      detections={
+                        mapMode === 'raw'
+                          ? rawDetections.filter(
+                              (d) =>
+                                !area ||
+                                (d.longitude >= area.bounds[0] &&
+                                  d.latitude >= area.bounds[1] &&
+                                  d.longitude <= area.bounds[2] &&
+                                  d.latitude <= area.bounds[3])
+                            )
+                          : undefined
+                      }
+                      events={filtered}
+                      selected={selected}
+                      onSelect={choose}
+                      hazards={hazards}
+                      showHazards={showHazards && mapMode === 'events'}
+                      showIndustrial={showIndustrial && mapMode === 'events'}
+                      subscriberLocation={
+                        notif?.latitude && notif?.longitude
+                          ? {
+                              latitude: notif.latitude,
+                              longitude: notif.longitude,
+                              radiusKm: notif.alert_radius_km || 10,
+                            }
+                          : null
+                      }
+                      showSubscriberRadius={showSubscriberRadius && mapMode === 'events'}
+                    />
+
+                    {/* Floating Layer Controls Panel */}
+                    <div className="map-floating-layer-panel">
+                      <span className="layer-panel-title">MAP OVERLAYS</span>
+                      <label className="floating-layer-toggle">
+                        <input
+                          type="checkbox"
+                          checked={showHazards}
+                          disabled={mapMode !== 'events'}
+                          onChange={(e) => setShowHazards(e.target.checked)}
+                        />
+                        <span>NASA EONET Hazards</span>
+                      </label>
+                      <label className="floating-layer-toggle">
+                        <input
+                          type="checkbox"
+                          checked={showIndustrial}
+                          disabled={mapMode !== 'events'}
+                          onChange={(e) => setShowIndustrial(e.target.checked)}
+                        />
+                        <span>OSM Industrial Sites</span>
+                      </label>
+                      {notif?.latitude && notif?.longitude && (
+                        <label className="floating-layer-toggle">
+                          <input
+                            type="checkbox"
+                            checked={showSubscriberRadius}
+                            disabled={mapMode !== 'events'}
+                            onChange={(e) => setShowSubscriberRadius(e.target.checked)}
+                          />
+                          <span>Alert Coverage Radius</span>
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Floating Map Legend */}
+                    <div className="map-floating-legend">
+                      {mapMode === 'raw' ? (
+                        <span>Raw FIRMS: Cyan VIIRS (375m) · Purple MODIS (1km)</span>
+                      ) : (
+                        <>
+                          <span className="legend-item">
+                            <i className="legend-dot critical" /> Critical Risk (&gt;80)
+                          </span>
+                          <span className="legend-item">
+                            <i className="legend-dot high" /> High
+                          </span>
+                          <span className="legend-item">
+                            <i className="legend-dot medium" /> Medium
+                          </span>
+                          <span className="legend-item">
+                            <i className="legend-dot normal" /> Normal
+                          </span>
+                          {showHazards && (
+                            <span className="legend-item">
+                              <i className="legend-dot hazard" /> EONET hazard
+                            </span>
+                          )}
+                          {showIndustrial && (
+                            <span className="legend-item">
+                              <i className="legend-dot industrial" /> OSM industrial
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Side Event Quick Feed */}
+                  <aside className="map-event-feed">
+                    <div className="map-event-feed-head">
+                      <h3>Priority Events</h3>
+                      <span className="badge normal">{filtered.length}</span>
+                    </div>
+                    {busy && !events.length ? (
+                      <p className="empty">Loading events…</p>
+                    ) : (
+                      filtered.map((e) => (
+                        <button
+                          key={e.id}
+                          type="button"
+                          className={`event-feed-card ${selected?.id === e.id ? 'selected' : ''}`}
+                          onClick={() => choose(e)}
+                        >
+                          <div className="event-feed-top">
+                            <span className="event-feed-id">
+                              {e.is_demo ? 'DEMO · ' : ''}TG-{e.id.slice(0, 8)}
+                            </span>
+                            <RiskBadge level={e.risk?.risk_level} />
+                          </div>
+                          <div className="event-feed-class">
+                            <span>{label(e.classification?.predicted_class)}</span>
+                            <ChevronRight size={14} className="text-muted" />
+                          </div>
+                          <div className="event-feed-location">
+                            {e.context?.location?.display_name ||
+                              `${num(e.latitude, 3)}° N, ${num(e.longitude, 3)}° E`}
+                          </div>
+                          <div className="event-feed-bottom">
+                            <span className="text-muted">
+                              <Flame size={12} className="text-amber" /> {num(e.mean_frp)} MW
+                            </span>
+                            <span className="text-muted">{e.detection_count ?? '—'} obs</span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                    {!busy && !filtered.length && (
+                      <p className="empty">
+                        {events.length
+                          ? 'No events match active filters.'
+                          : 'No events available. Synchronize FIRMS as administrator.'}
+                      </p>
+                    )}
+                  </aside>
+                </div>
+
+                <div className="map-footer-meta">
+                  <span>NASA FIRMS · Near-real-time satellite thermal anomalies</span>
+                  <span>{demo ? 'Fixture date window: 10–11 Sep 2026' : 'Satellite overpass timestamps'}</span>
+                </div>
+              </section>
+
+              {/* Filter Toolbar */}
+              <FilterToolbar
+                search={search}
+                setSearch={setSearch}
+                filter={filter}
+                setFilter={setFilter}
+                sourceFilter={sourceFilter}
+                setSourceFilter={setSourceFilter}
+                dateFilter={dateFilter}
+                setDateFilter={setDateFilter}
+                contextFilter={contextFilter}
+                setContextFilter={setContextFilter}
+                areaQuery={areaQuery}
+                setAreaQuery={setAreaQuery}
+                areas={areas}
+                area={area}
+                setArea={setArea}
+                findArea={findArea}
+                busy={busy}
+                totalCount={events.length}
+                filteredCount={filtered.length}
+              />
+
+              {/* Event Table */}
+              <EventTable
+                events={filtered}
+                selectedId={selected?.id}
+                onSelect={choose}
+                busy={busy}
+              />
+            </>
+          )}
+
+          {/* VIEW: Live Map */}
+          {view === 'Live Map' && (
+            <>
+              <FilterToolbar
+                search={search}
+                setSearch={setSearch}
+                filter={filter}
+                setFilter={setFilter}
+                sourceFilter={sourceFilter}
+                setSourceFilter={setSourceFilter}
+                dateFilter={dateFilter}
+                setDateFilter={setDateFilter}
+                contextFilter={contextFilter}
+                setContextFilter={setContextFilter}
+                areaQuery={areaQuery}
+                setAreaQuery={setAreaQuery}
+                areas={areas}
+                area={area}
+                setArea={setArea}
+                findArea={findArea}
+                busy={busy}
+                totalCount={events.length}
+                filteredCount={filtered.length}
+              />
+
+              <section className="map-intelligence-section" style={{ height: '620px' }}>
+                <div className="map-section-head">
+                  <div className="map-section-title-group">
+                    <MapPinned size={18} className="text-teal" />
+                    <h2>Full-Screen Geospatial Intelligence View</h2>
+                  </div>
+                  <div className="map-section-controls">
+                    <select
+                      aria-label="Map mode"
+                      value={mapMode}
+                      onChange={(e) => setMapMode(e.target.value)}
+                    >
+                      <option value="events">Clustered Events View</option>
+                      <option value="raw">Raw Satellite Hotspots</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="map-viewport-grid" style={{ height: '560px' }}>
+                  <div className="map-container-relative">
+                    <MapView
+                      detections={
+                        mapMode === 'raw'
+                          ? rawDetections.filter(
+                              (d) =>
+                                !area ||
+                                (d.longitude >= area.bounds[0] &&
+                                  d.latitude >= area.bounds[1] &&
+                                  d.longitude <= area.bounds[2] &&
+                                  d.latitude <= area.bounds[3])
+                            )
+                          : undefined
+                      }
+                      events={filtered}
+                      selected={selected}
+                      onSelect={choose}
+                      hazards={hazards}
+                      showHazards={showHazards && mapMode === 'events'}
+                      showIndustrial={showIndustrial && mapMode === 'events'}
+                      subscriberLocation={
+                        notif?.latitude && notif?.longitude
+                          ? {
+                              latitude: notif.latitude,
+                              longitude: notif.longitude,
+                              radiusKm: notif.alert_radius_km || 10,
+                            }
+                          : null
+                      }
+                      showSubscriberRadius={showSubscriberRadius && mapMode === 'events'}
+                    />
+
+                    {/* Floating Layer Controls Panel */}
+                    <div className="map-floating-layer-panel">
+                      <span className="layer-panel-title">MAP LAYERS</span>
+                      <label className="floating-layer-toggle">
+                        <input
+                          type="checkbox"
+                          checked={showHazards}
+                          disabled={mapMode !== 'events'}
+                          onChange={(e) => setShowHazards(e.target.checked)}
+                        />
+                        <span>NASA EONET Hazards</span>
+                      </label>
+                      <label className="floating-layer-toggle">
+                        <input
+                          type="checkbox"
+                          checked={showIndustrial}
+                          disabled={mapMode !== 'events'}
+                          onChange={(e) => setShowIndustrial(e.target.checked)}
+                        />
+                        <span>OSM Industrial Footprints</span>
+                      </label>
+                      {notif?.latitude && notif?.longitude && (
+                        <label className="floating-layer-toggle">
+                          <input
+                            type="checkbox"
+                            checked={showSubscriberRadius}
+                            disabled={mapMode !== 'events'}
+                            onChange={(e) => setShowSubscriberRadius(e.target.checked)}
+                          />
+                          <span>Alert Coverage Radius</span>
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Floating Map Legend */}
+                    <div className="map-floating-legend">
+                      {mapMode === 'raw' ? (
+                        <span>Raw FIRMS: Cyan VIIRS (375m) · Purple MODIS (1km)</span>
+                      ) : (
+                        <>
+                          <span className="legend-item"><i className="legend-dot critical" /> Critical</span>
+                          <span className="legend-item"><i className="legend-dot high" /> High</span>
+                          <span className="legend-item"><i className="legend-dot medium" /> Medium</span>
+                          <span className="legend-item"><i className="legend-dot normal" /> Normal</span>
+                          {showHazards && <span className="legend-item"><i className="legend-dot hazard" /> EONET hazard</span>}
+                          {showIndustrial && <span className="legend-item"><i className="legend-dot industrial" /> OSM industrial</span>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <aside className="map-event-feed">
+                    <div className="map-event-feed-head">
+                      <h3>Monitored Events</h3>
+                      <span className="badge normal">{filtered.length}</span>
+                    </div>
+                    {filtered.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        className={`event-feed-card ${selected?.id === e.id ? 'selected' : ''}`}
+                        onClick={() => choose(e)}
+                      >
+                        <div className="event-feed-top">
+                          <span className="event-feed-id">{e.is_demo ? 'DEMO · ' : ''}TG-{e.id.slice(0, 8)}</span>
+                          <RiskBadge level={e.risk?.risk_level} />
+                        </div>
+                        <div className="event-feed-class">
+                          <span>{label(e.classification?.predicted_class)}</span>
+                          <ChevronRight size={14} className="text-muted" />
+                        </div>
+                        <div className="event-feed-location">
+                          {e.context?.location?.display_name || `${num(e.latitude, 3)}° N, ${num(e.longitude, 3)}° E`}
+                        </div>
+                      </button>
+                    ))}
+                  </aside>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* VIEW: Events Explorer */}
+          {view === 'Events' && (
+            <>
+              <FilterToolbar
+                search={search}
+                setSearch={setSearch}
+                filter={filter}
+                setFilter={setFilter}
+                sourceFilter={sourceFilter}
+                setSourceFilter={setSourceFilter}
+                dateFilter={dateFilter}
+                setDateFilter={setDateFilter}
+                contextFilter={contextFilter}
+                setContextFilter={setContextFilter}
+                areaQuery={areaQuery}
+                setAreaQuery={setAreaQuery}
+                areas={areas}
+                area={area}
+                setArea={setArea}
+                findArea={findArea}
+                busy={busy}
+                totalCount={events.length}
+                filteredCount={filtered.length}
+              />
+
+              <EventTable
+                events={filtered}
+                selectedId={selected?.id}
+                onSelect={choose}
+                busy={busy}
+              />
+            </>
+          )}
+
+          {/* VIEW: Alerts */}
+          {view === 'Alerts' && (
+            <AlertCenter
+              alerts={alerts}
+              onAcknowledge={acknowledge}
+              ackBusy={ackBusy}
+              onSelectEvent={(eventId) => {
+                const target = events.find((e) => e.id === eventId);
+                if (target) choose(target);
+                else setError(`Event ${eventId} not found in active scope.`);
+              }}
+              busy={busy}
+            />
+          )}
+
+          {/* VIEW: Analytics */}
+          {view === 'Analytics' && (
+            <AnalyticsView
+              trends={trends}
+              trendsAvailable={trendsAvailable}
+              trendsReason={trendsReason}
+              trendsBusy={trendsBusy}
+              days={days}
+              setDays={setDays}
+              events={events}
+              demo={demo}
+            />
+          )}
+
+          {/* VIEW: AI Copilot */}
+          {view === 'AI Copilot' && (
+            <div className="analytics-view-container">
+              <section className="settings-panel">
+                <div className="settings-panel-header">
+                  <div className="settings-icon-wrap" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                    <Sparkles size={22} />
+                  </div>
+                  <div>
+                    <h2>ThermaGuard AI Evidence Copilot</h2>
+                    <p className="text-muted">
+                      Operational AI explanations grounded strictly in verified event data, weather grids, and satellite observations.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="copilot-conversation-area" style={{ maxHeight: '480px' }}>
+                  {chatBusy ? (
+                    <div className="copilot-busy-state">
+                      <Sparkles size={24} className="spin text-teal" />
+                      <p>Querying verified event evidence from system repository…</p>
+                    </div>
+                  ) : answer ? (
+                    <div className="copilot-answer-rendered">
+                      <div className="copilot-answer-bubble">{answer}</div>
+                    </div>
+                  ) : (
+                    <div className="copilot-placeholder-state">
+                      <Sparkles size={36} className="text-muted" />
+                      <p>
+                        Select an event from the map or event explorer, or enter an operational question below.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <form className="copilot-input-form" onSubmit={ask} style={{ borderRadius: '8px' }}>
+                  <input
+                    type="text"
+                    aria-label="Copilot question"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={
+                      selected
+                        ? `Ask about event ${selected.id.slice(0, 10)}…`
+                        : 'Ask about thermal risk across monitored events…'
+                    }
+                    required
+                    maxLength={1000}
+                    disabled={chatBusy}
+                  />
+                  <button
+                    type="submit"
+                    className="primary"
+                    disabled={chatBusy || !question.trim()}
+                  >
+                    <Send size={16} />
+                    Submit
+                  </button>
+                </form>
+              </section>
+            </div>
+          )}
+
+          {/* VIEW: Providers */}
+          {view === 'Providers' && (
+            <ProviderHealthGrid
+              providerHealth={providerHealth}
+              isAdmin={user.role === 'admin'}
+              demo={demo}
+              syncBusy={syncBusy}
+              onSyncFirms={syncFirms}
+            />
+          )}
+
+          {/* VIEW: Review / Labels */}
+          {view === 'Review / Labels' && (
+            <ReviewCenter
+              model={model}
+              isAdmin={user.role === 'admin'}
+              trainBusy={trainBusy}
+              onTrainModel={trainModel}
+            />
+          )}
+
+          {/* VIEW: Settings */}
+          {view === 'Settings' && (
+            <NotificationSettings
+              notif={notif}
+              notifBusy={notifBusy}
+              onSaveNotif={saveNotif}
+              isAdmin={user.role === 'admin'}
+              organizations={organizations}
+              assignments={assignments}
+              onCreateOrg={async (values) => {
+                await apiPost('/admin/organizations', values, token);
+                setNotice('Organization created successfully.');
+                const orgs = await apiGet<Organization[]>('/admin/organizations', token);
+                setOrganizations(orgs);
+              }}
+              onAssignArea={async (values) => {
+                await apiPost(
+                  '/admin/assignments',
+                  {
+                    ...values,
+                    organization_id: Number(values.organization_id),
+                    bounds: values.bounds.split(',').map(Number),
+                  },
+                  token
+                );
+                setNotice('Territory assigned successfully.');
+                const assigns = await apiGet<Assignment[]>('/admin/assignments', token);
+                setAssignments(assigns);
+              }}
+              onUpdateThreshold={async (threshold) => {
+                await apiPost('/admin/threshold', { threshold }, token);
+                setNotice(`Global risk threshold updated to ${threshold}.`);
+                await refresh();
+              }}
+              onAssignUser={async (values) => {
+                await apiPost(
+                  '/admin/users/assign',
+                  { email: values.email, organization_id: Number(values.organization_id) },
+                  token
+                );
+                setNotice('User assigned to organization.');
+              }}
+            />
+          )}
+
+          {/* Footer */}
+          <footer className="footer">
+            <span>ThermaGuard AI · Operational Thermal Intelligence</span>
+            <div className="footer-steps">
+              <span>DETECT</span>
+              <ChevronRight size={10} />
+              <span>UNDERSTAND</span>
+              <ChevronRight size={10} />
+              <span>CLASSIFY</span>
+              <ChevronRight size={10} />
+              <span>ASSESS RISK</span>
+              <ChevronRight size={10} />
+              <span>ACT</span>
+            </div>
+            <small>Evidence before action.</small>
+          </footer>
+        </main>
+      </div>
+
+      {/* Selected Event Detail Drawer */}
+      {selected && (
+        <EventDetailDrawer
+          event={selected}
+          onClose={() => setSelected(null)}
+          token={token}
+          evidence={evidence}
+          evidenceBusy={evidenceBusy}
+          history={history}
+          onOpenCopilot={() => {
+            setCopilot(true);
+          }}
+          onUpdateEventContext={(updatedContext) => {
+            const updated = { ...selected, context: updatedContext };
+            setSelected(updated);
+            setEvents(events.map((e) => (e.id === selected.id ? updated : e)));
+          }}
+        />
+      )}
+
+      {/* Copilot Dialog */}
+      <CopilotModal
+        isOpen={copilot}
+        onClose={() => setCopilot(false)}
+        selected={selected}
+        question={question}
+        setQuestion={setQuestion}
+        answer={answer}
+        chatMode={chatMode}
+        chatBusy={chatBusy}
+        onAsk={ask}
+        onSelectSuggestedQuestion={(q) => {
+          setQuestion(q);
+        }}
+      />
+    </div>
+  );
 }
-function Stat({title,value,detail,icon,unit,accent='green'}:{title:string;value:string;detail:string;icon:React.ReactNode;unit?:string;accent?:string}){return <article className={'stat '+accent}><div><span>{title}</span><span className="stat-icon">{icon}</span></div><strong>{value}<small>{unit}</small></strong><p>{detail}</p></article>}
-function AdminForm({title,fields,submit,onError}:{title:string;fields:string[];submit:(values:Record<string,string>)=>Promise<void>;onError:(error:unknown)=>void}){const [busy,setBusy]=useState(false);return <form className="admin-form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;setBusy(true);try{await submit(Object.fromEntries(new FormData(form)) as Record<string,string>);form.reset()}catch(e){onError(e)}finally{setBusy(false)}}}>{fields.map(f=><label key={f}>{f.replaceAll('_',' ')}<input name={f} required/></label>)}<button className="button" disabled={busy}>{busy?'Working…':title}</button></form>}

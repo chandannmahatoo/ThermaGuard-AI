@@ -62,7 +62,7 @@ PYTHONPATH=backend ./.venv/bin/python backend/review_event_summary.py EVENT_ID
 PYTHONPATH=backend ./.venv/bin/python backend/prepare_review_row.py EVENT_ID
 ```
 
-Summary/prepare without update flags are read-only, query stored non-demo events, and leave all seven checklist items unchecked. They do not call providers, Ollama, training or notification services. Missing evidence is printed as unavailable, not zero. Context acquisition date is shown so reviewers can judge temporal relevance.
+Summary/prepare without update flags are read-only, query stored non-demo events, and leave all seven checklist items unchecked. They do not call providers, the AI copilot, training or notification services. Missing evidence is printed as unavailable, not zero. Context acquisition date is shown so reviewers can judge temporal relevance.
 
 After personally inspecting the evidence and collecting a real source reference, provide your own values:
 
@@ -97,3 +97,72 @@ eligibility as well as review publication. Passing these checks is not source
 verification. Geographic/time cohort suggestions never enter `FEATURES` and never
 automatically populate approved split groups. The 30-row / five-class / ten-group
 gate is unchanged.
+
+## Multi-sensor evidence and the existing trained model
+
+The training unit remains one human-reviewed EVENT. Several satellites inside a
+cluster do not create separate labeled samples. The original reviewed-only,
+non-demo, five-class, 30-event, 10-group readiness gate and grouped splitting are
+unchanged. Source, confidence, FRP, NDVI and proximity never generate a label.
+
+Candidate export now carries source_counts and sensor_provenance JSON, separate
+VIIRS/MODIS primary and secondary means, sensor/satellite counts, and scan/track
+means as assistance columns. Publication preserves populated sensor columns after
+the unchanged training-column prefix. Raw provenance remains accessible through
+event evidence. These extra columns are NOT silently added to the existing RF
+feature vector; lat/lon and dataset identity remain excluded from model inputs.
+
+Feature version 2 and the installed artifact remain unchanged. For MODIS/mixed
+sensor events, the uncalibrated brightness and confidence feature slots are NaN
+(null in stored features/CSV); SimpleImputer retains its existing role. Prediction
+is explicitly unavailable for these events because the currently reviewed model
+has not been validated for MODIS. A future, explicitly requested sensor-aware
+model revision must evaluate these fields and appropriate held-out sensor/site/time
+coverage before enabling that inference. Merely running training on the current
+schema does not remove the MODIS inference safeguard. Existing VIIRS inference
+continues. The deterministic risk score remains a separate heuristic; legacy
+cross-sensor brightness summaries are not calibrated safety measurements.
+
+Current read-only readiness audit: 33 eligible reviewed events, 13 groups, five
+classes, readiness YES (split feasibility is checked during explicitly requested
+training). Class counts: industrial 6, persistent industrial 6, vegetation 7,
+natural 5, possible false positive 9. The stored 121 real detections are VIIRS:
+69 have documented VIIRS_SNPP_NRT query provenance, 52 have an unknown legacy
+dataset. Existing CSVs have no populated sensor-provenance columns; these are not
+backfilled or guessed by this change. Human review/source/group cells are untouched.
+
+Missing-feature counts out of 33 reviewed events:
+
+| Feature(s) | Missing |
+|---|---:|
+| historical_mean_frp, historical_max_frp, historical_std_frp | 27 each |
+| distance_to_industrial_m, nearby_industrial_count, nearby_facility_count | 21 each |
+| distance_to_refinery_m, distance_to_forest_m, vegetation_fraction, built_up_fraction | 33 each |
+| distance_to_powerplant_m, distance_to_factory_m, distance_to_farmland_m | 23 each |
+| distance_to_residential_m | 22 |
+| ndvi | 28 |
+| landuse_industrial, landuse_forest, landuse_farmland | 23 each |
+
+All other existing model features are populated. This describes missingness, not
+scientific sufficiency. No exporter, finalizer or training command was run against
+the real datasets during this implementation; real smoke requests were read-only.
+
+## Future Model V2: evidence proposal, not a trained model
+
+The 11 September multi-source acquisition produced 297 real event candidates (651 observations), including 264 new unreviewed events. The original 33 human review claims are preserved, but zero currently satisfy strict V2 review quality: all lack timestamps and 23 have pre-existing evidence drift. See [the acquisition audit](REVIEW_ACQUISITION_REPORT.md) for source counts, missingness, class × sensor matrix and leakage findings. The V1 feature vector, feature version and both model files remain unchanged.
+
+Proposed V2 feature groups:
+
+| Group | Candidate features | Scientific treatment |
+|---|---|---|
+| Common evidence | FRP statistics, event duration, independent detection count, day/night fractions, recurrence, OSM distances/context, NDVI | FRP has MW units across sensors but resolution/sensitivity differ. Evaluate sensor effects; context must be dated and missingness explicit. Recurrence uses the available cohort, not a complete global history. |
+| Sensor-specific | `viirs_primary_thermal_mean`, `viirs_secondary_thermal_mean`, `modis_primary_thermal_mean`, `modis_secondary_thermal_mean`; separate VIIRS/MODIS FRP mean/max | Preserve VIIRS I4/I5 versus MODIS brightness/T31. Do not pool brightness or fill one instrument's absence with another instrument's band. |
+| Multiple sensors | per-platform independent counts, unique satellites/instruments, cross-sensor confirmation, future temporal agreement/recurrence | Normalize platform aliases; collapse equivalent NRT/SP representations for independent statistics while retaining every raw row. Temporal agreement features remain a proposal until defined and validated. |
+
+Exclude event IDs, reviewer identity, review notes, labels/label-derived quantities, predictions and risk scores from predictive inputs. Raw latitude/longitude are for audit and splitting; using them as features requires a separately justified spatial-generalization experiment. V1 remains separate: do not silently replace its feature order or imputer.
+
+`review_progress.py --v2` is a read-only gate: timestamped current-evidence reviews, valid class/reviewer/source/non-demo provenance, class counts, split groups, multiple sensor families, reviewed cross-sensor coverage, quality flags and geographic/overpass leakage. Stage A is ≥100 genuine reviews, B ≥200, C 300–500; serious evaluation should have ≥30 per class, preferably ≥50. These targets do not establish validity. Missingness and source/region imbalance require assessment even after numeric targets pass. No automatic training occurs, including when the gate eventually returns true.
+
+All future publication through `finalize_reviewed_labels.py` requires a valid timezone-aware review timestamp. `prepare_review_row.py --reviewed true` records the time of that explicit human approval; it never backdates existing claims. Reopen stale rows explicitly, refresh their evidence, review sources and facility grouping, then approve. New acquisition uses `freeze_reviewed` only to preserve prior event payloads and human-owned CSV cells; stale evidence stays V2-ineligible. Legacy V1 eligibility remains unchanged for compatibility and must not be quoted as V2 readiness.
+
+A subsequent live sync outside the controlled collection refreshed event evidence and increased the database to 790 detections / 405 events (372 unreviewed candidates). The final audit addendum supersedes point-in-time counts above: 24 existing reviews now have evidence drift. Model V1 remains unchanged and V2 eligibility remains zero.

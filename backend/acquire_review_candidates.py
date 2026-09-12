@@ -11,7 +11,7 @@ import sys
 
 import httpx
 from sqlalchemy import select
-from app import ml, providers
+from app import ml, providers, main as app_main
 from app.config import settings
 from app.database import Session, Detection, Event
 from app.intelligence import validate
@@ -20,8 +20,7 @@ from export_review_candidates import export_candidates
 from review_common import read_csv
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = {'VIIRS_SNPP_NRT', 'VIIRS_SNPP_SP', 'VIIRS_NOAA20_NRT',
-           'VIIRS_NOAA20_SP', 'VIIRS_NOAA21_NRT', 'MODIS_NRT', 'MODIS_SP'}
+SOURCES = providers.FIRMS_SOURCES
 
 
 class ReviewConflict(ValueError):
@@ -62,9 +61,14 @@ def parse_plan(value):
         result.append(dict(name=name, bounds=bounds, start_date=start.isoformat(),
                            end_date=end.isoformat(), source=source, max_observations=maximum))
     target = value.get('target_candidates', 40)
-    if type(target) is not int or not 30 <= target <= 50:
-        raise ValueError('target_candidates must be between 30 and 50')
-    return dict(regions=result, target_candidates=target)
+    if type(target) is not int or not 30 <= target <= 500:
+        raise ValueError('target_candidates must be between 30 and 500')
+    if sum(math.ceil(((date.fromisoformat(row['end_date'])-date.fromisoformat(row['start_date'])).days+1)/5) for row in result) > settings.firms_max_requests:
+        raise ValueError('Acquisition plan exceeds FIRMS area-request budget')
+    freeze = value.get('freeze_reviewed', False)
+    if type(freeze) is not bool:
+        raise ValueError('freeze_reviewed must be boolean')
+    return dict(regions=result, target_candidates=target, freeze_reviewed=freeze)
 
 
 def chunks(region):
@@ -75,7 +79,7 @@ def chunks(region):
         start += timedelta(days=days)
 
 
-def protect_reviews(db, rows):
+def protect_reviews(db, rows, freeze=False):
     protected = {}
     for row in rows:
         if row.get('reviewed', '').strip().lower() != 'true':
@@ -83,6 +87,9 @@ def protect_reviews(db, rows):
         item = db.get(Event, row['event_id'])
         if item is None or item.is_demo or item.payload.get('is_demo') is not False:
             raise ReviewConflict('Reviewed event missing or provenance changed: ' + row['event_id'])
+        if freeze:
+            protected[item.id] = deepcopy(item.payload)
+            continue
         fresh = ml.candidate_row(item.payload)
         for key in ml.ASSISTANCE_COLUMNS + ml.FEATURES:
             value = '' if fresh.get(key) is None else str(fresh[key])
@@ -100,14 +107,14 @@ def verify_protected(events, protected):
                                  + event_id + '. Human reconciliation required; no label transferred.')
 
 
-async def ingest_batch(db, observations, reviewed_rows):
+async def ingest_batch(db, observations, reviewed_rows, freeze_reviewed=False):
     """Reuse the pipeline inside a rollback-capable transaction, with exact evidence guards."""
-    protected = protect_reviews(db, reviewed_rows)
+    protected = protect_reviews(db, reviewed_rows, freeze=freeze_reviewed)
     accepted = {}
     for row in observations:
-        if row.get('is_demo') is not False or row.get('provider') != 'NASA' or row.get('source') != 'NASA FIRMS':
+        if row.get('is_demo') is not False or row.get('provider') not in ('NASA', 'NASA FIRMS') or row.get('source') != 'NASA FIRMS':
             raise ValueError('Acquisition accepts only real NASA FIRMS observations')
-        verified = validate(row['raw'], is_demo=False)
+        verified = validate(row['raw'], is_demo=False, source_dataset=row.get('source_dataset'))
         if any(verified[k] != row.get(k) for k in verified if k != 'retrieved_at'):
             raise ValueError('Observation does not match validated FIRMS provenance')
         accepted.setdefault(row['id'], row)
@@ -115,13 +122,14 @@ async def ingest_batch(db, observations, reviewed_rows):
     existing = sum(db.get(Detection, key) is not None for key in accepted)
     try:
         events = await process(db, list(accepted.values()), enrich=False,
-                               create_notifications=False, commit=False)
+                               create_notifications=False, commit=False, frozen_events=protected if freeze_reviewed else None)
         verify_protected(events, protected)
     except Exception:
         db.rollback()
         raise
     after = {e['id'] for e in events}
-    return dict(new_detections=len(accepted)-existing, existing_detections=existing,
+    inserted = db.info.get('ingestion_stats', {}).get('new_detections', len(accepted)-existing)
+    return dict(new_detections=inserted, existing_detections=len(accepted)-inserted,
                 duplicate_observations=len(observations)-len(accepted),
                 new_events=len(after-before), removed_reclustered_events=len(before-after),
                 candidate_events=len(after))
@@ -140,7 +148,7 @@ def backup_reviews(path):
     return rows, content, backup
 
 
-async def acquire(plan, *, dry_run=False, candidates=ml.CANDIDATES, session_factory=Session, provider=None):
+async def _acquire(plan, *, dry_run=False, candidates=ml.CANDIDATES, session_factory=Session, provider=None):
     plan = parse_plan(plan)
     if dry_run:
         return dict(dry_run=True, provider_requests=0, plan=plan,
@@ -152,7 +160,7 @@ async def acquire(plan, *, dry_run=False, candidates=ml.CANDIDATES, session_fact
     # Fail before any provider call if a reviewed event already differs from its evidence.
     _, initial_rows, _ = read_csv(candidates)
     with session_factory() as db:
-        protect_reviews(db, initial_rows)
+        protect_reviews(db, initial_rows, freeze=plan['freeze_reviewed'])
     original_rows, _, backup = backup_reviews(candidates)
     original_reviews = {r['event_id']: r for r in original_rows if r.get('reviewed', '').strip().lower() == 'true'}
     log = dict(started_at=datetime.now(timezone.utc).isoformat(), backup=str(backup),
@@ -201,16 +209,16 @@ async def acquire(plan, *, dry_run=False, candidates=ml.CANDIDATES, session_fact
                                                            bounds=region['bounds'], start_date=start, days=days)
                 _, rows, original = read_csv(candidates)
                 with session_factory() as db:
-                    batch = await ingest_batch(db, observations, rows)
+                    batch = await ingest_batch(db, observations, rows, freeze_reviewed=plan['freeze_reviewed'])
                     if candidates.read_bytes() != original:
                         db.rollback()
                         raise ReviewConflict('Candidate CSV changed during acquisition; batch rolled back')
                     db.commit()
                 stat.update(batch)
-                exported = export_candidates(candidates, session_factory)
+                exported = export_candidates(candidates, session_factory, freeze_reviewed=plan['freeze_reviewed'])
                 _, updated, _ = read_csv(candidates)
                 updated_by_id = {r['event_id']: r for r in updated}
-                if any(updated_by_id.get(k) != v for k, v in original_reviews.items()):
+                if any(any(updated_by_id.get(k, {}).get(field) != value for field, value in v.items()) for k, v in original_reviews.items()):
                     raise ReviewConflict('Post-export review mismatch: restore preserved backup and reconcile manually')
                 stat['candidate_events'] = exported['total']
                 stat['status'] = 'committed'
@@ -234,9 +242,80 @@ async def acquire(plan, *, dry_run=False, candidates=ml.CANDIDATES, session_fact
     return log
 
 
+async def acquire(plan, **kwargs):
+    if app_main.firms_sync_lock.locked():
+        raise ValueError('Another ingestion is active')
+    async with app_main.firms_sync_lock:
+        return await _acquire(plan, **kwargs)
+
+
+async def enrich_unreviewed(*, candidates=ml.CANDIDATES, session_factory=Session):
+    """Bounded context refresh for unreviewed candidates; no network inside a DB transaction."""
+    from app.intelligence import FEATURES, features, assess
+    if settings.demo_mode or app_main.firms_sync_lock.locked():
+        raise ValueError('Requires real mode and an idle ingestion pipeline')
+    async with app_main.firms_sync_lock:
+        _, rows, csv_snapshot = read_csv(candidates)
+        unreviewed = {row['event_id'] for row in rows if row.get('reviewed', '').lower() == 'false'}
+        with session_factory() as db:
+            snapshots = {item.id:deepcopy(item.payload) for item in db.scalars(select(Event).where(Event.is_demo.is_(False)))}
+        # Round-robin source combinations so a large single-source cohort cannot
+        # consume every provider slot before another sensor is represented.
+        buckets = {}
+        for identity in sorted(unreviewed & snapshots.keys()):
+            event = snapshots[identity]
+            context = event.get('context', {})
+            if context.get('osm_context_available') and app_main.satellite_context_valid(context):
+                continue
+            combination = tuple(sorted(event.get('source_counts', {})))
+            buckets.setdefault(combination, []).append(event)
+        pending=[]
+        while any(buckets.values()):
+            for key in sorted(buckets):
+                if buckets[key]:pending.append(buckets[key].pop(0))
+        counts={'osm_requests':0,'satellite_requests':0,'updated_events':0,'osm_available':0,'satellite_available':0}
+        updates={}
+        for original in pending:
+            if counts['osm_requests']>=settings.osm_events_per_sync and counts['satellite_requests']>=settings.satellite_events_per_sync:
+                break
+            event=deepcopy(original);context=event.setdefault('context',{})
+            if not context.get('osm_context_available') and counts['osm_requests']<settings.osm_events_per_sync:
+                counts['osm_requests']+=1
+                try:update=await asyncio.wait_for(providers.osm(event),settings.osm_timeout_seconds)
+                except (httpx.HTTPError,TimeoutError,ValueError):update={'osm_context_available':False,'osm_reason':'provider_unavailable'}
+                context.update(update)
+            if not app_main.satellite_context_valid(context) and counts['satellite_requests']<settings.satellite_events_per_sync:
+                counts['satellite_requests']+=1
+                try:update=await asyncio.wait_for(providers.satellite(event),2*(settings.copernicus_token_timeout_seconds+settings.copernicus_stats_timeout_seconds))
+                except (httpx.HTTPError,TimeoutError,ValueError):update={'satellite_context_available':False,'reason':'provider_unavailable'}
+                context.update(update)
+                if app_main.satellite_context_valid(context):context['satellite_event_signature']=app_main.satellite_signature(event)
+            event['classification']=ml.predict(event)  # Read existing model only; never approve a label.
+            event['risk']=assess(event,list(snapshots.values()))
+            event['features']={key:None if value!=value else value for key,value in zip(FEATURES,features(event))}
+            counts['osm_available']+=int(bool(context.get('osm_context_available')))
+            counts['satellite_available']+=int(app_main.satellite_context_valid(context))
+            updates[event['id']]=event
+        if Path(candidates).read_bytes()!=csv_snapshot:
+            raise ReviewConflict('Review CSV changed during enrichment; no context updates committed')
+        with session_factory() as db:
+            if db.get_bind().dialect.name=='sqlite':db.connection().exec_driver_sql('BEGIN IMMEDIATE')
+            current={item.id:item for item in db.scalars(select(Event).where(Event.is_demo.is_(False)))}
+            if {key:item.payload for key,item in current.items()}!=snapshots:
+                raise ReviewConflict('Event evidence changed during enrichment; no updates committed')
+            if Path(candidates).read_bytes()!=csv_snapshot:
+                raise ReviewConflict('Review CSV changed; no updates committed')
+            for identity,event in updates.items():current[identity].payload=event
+            db.commit()
+        export_candidates(candidates,session_factory,freeze_reviewed=True)
+        counts['updated_events']=len(updates)
+        return counts
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan', type=Path)
+    parser.add_argument('--enrich-unreviewed', action='store_true')
     parser.add_argument('--region')
     parser.add_argument('--bounds', type=float, nargs=4)
     parser.add_argument('--start-date')
@@ -248,6 +327,9 @@ def main(argv=None):
                         help='Always enabled for candidate acquisition')
     args = parser.parse_args(argv)
     try:
+        if args.enrich_unreviewed:
+            print(json.dumps(asyncio.run(enrich_unreviewed()), indent=2))
+            return 0
         if args.plan:
             plan = json.loads(args.plan.read_text())
         else:

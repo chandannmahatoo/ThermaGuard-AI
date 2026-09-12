@@ -15,7 +15,7 @@ from app import main, ml
 from app.config import settings
 from app.database import Base, Detection, Event, Alert
 from app.intelligence import validate, FEATURES, CLASSES, features
-from app.review_validation import valid_source_reference
+from app.ml import valid_source_reference
 from acquire_review_candidates import (parse_plan, chunks, ingest_batch, acquire,
                                         ReviewConflict, verify_protected)
 from candidate_inventory import inventory, cohort_for
@@ -260,3 +260,40 @@ def test_id_reconciliation_requires_identical_evidence():
     verify_protected([{'id':'TG-one','value':1}], {'TG-one':{'id':'TG-one','value':1}})
     with pytest.raises(ReviewConflict):
         verify_protected([{'id':'TG-two','value':1}], {'TG-one':{'id':'TG-one','value':1}})
+
+
+def test_frozen_stale_review_is_preserved_and_new_overlap_refused(store, tmp_path):
+    path=tmp_path/'candidates.csv'
+    rows=seed(store,path)
+    with store() as db:
+        item=db.get(Event,rows[0]['event_id'])
+        changed=deepcopy(item.payload);changed['context']['landuse_class']='forest'
+        item.payload=changed;db.commit()
+        protected=deepcopy(item.payload)
+        asyncio.run(ingest_batch(db,[observation(lon=73)],rows,freeze_reviewed=True));db.commit()
+        assert db.get(Event,item.id).payload==protected
+        with pytest.raises(ValueError,match='Frozen reviewed event'):
+            asyncio.run(ingest_batch(db,[observation(lon=70.001)],rows,freeze_reviewed=True))
+        assert len(list(db.scalars(select(Detection))))==2
+    export_candidates(path,store,freeze_reviewed=True)
+    actual={r['event_id']:r for r in read_csv(path)[1]}
+    assert all(actual[rows[0]['event_id']][k]==v for k,v in rows[0].items())
+
+
+def test_enrichment_outside_transaction_and_review_preservation(store,tmp_path,monkeypatch):
+    from acquire_review_candidates import enrich_unreviewed
+    path=tmp_path/'candidates.csv';rows=seed(store,path)
+    with store() as db:
+        asyncio.run(ingest_batch(db,[observation(lon=73)],rows));db.commit()
+        before=deepcopy(db.get(Event,rows[0]['event_id']).payload)
+    export_candidates(path,store)
+    async def osm(event):
+        # An independent writer can reserve SQLite while provider work runs.
+        with store() as db:db.connection().exec_driver_sql('BEGIN IMMEDIATE');db.rollback()
+        return {'osm_context_available':True,'facilities':[]}
+    async def satellite(event):return {'satellite_context_available':False,'reason':'fixture_unavailable'}
+    monkeypatch.setattr(main.providers,'osm',osm);monkeypatch.setattr(main.providers,'satellite',satellite)
+    monkeypatch.setattr(main,'firms_sync_lock',asyncio.Lock())
+    result=asyncio.run(enrich_unreviewed(candidates=path,session_factory=store))
+    assert result['updated_events']==1 and result['osm_available']==1
+    with store() as db:assert db.get(Event,rows[0]['event_id']).payload==before

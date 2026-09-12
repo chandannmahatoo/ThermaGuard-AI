@@ -25,7 +25,7 @@ from review_progress import review_progress, main as progress_main
 
 
 def write_rows(path, rows, columns=None):
-    columns = columns or COLUMNS
+    columns = columns or list(dict.fromkeys(COLUMNS + [key for row in rows for key in row]))
     with path.open('w', newline='', encoding='utf-8') as file:
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
@@ -41,7 +41,7 @@ def candidate(event_id='TG-test-one', **updates):
 
 def reviewed(event_id='TG-test-one', **updates):
     row = candidate(event_id, label=CLASSES[0], reviewed='true', reviewer='TEST_ONLY_REVIEWER',
-                    source_reference='https://example.org/evidence/record-1', split_group='TEST_ONLY_GROUP')
+                    source_reference='https://example.org/evidence/record-1', split_group='TEST_ONLY_GROUP', reviewed_at='2026-01-02T00:00:00+00:00')
     row.update(updates)
     return row
 
@@ -209,7 +209,8 @@ def test_explicit_update_only_changes_target_metadata_and_creates_backup(tmp_pat
     _, backup = update_review_row(path, 'TG-test-one', changes)
     after = read_csv(path)[1]
     assert backup.read_bytes() == before
-    assert after[1] == rows[1]
+    assert after[1] == {**rows[1], 'reviewed_at': ''}
+    assert ml.valid_review_timestamp(after[0]['reviewed_at'])
     for key in COLUMNS:
         assert after[0][key] == changes.get(key, rows[0][key])
     with pytest.raises(ValueError, match='explicit --reviewed'):
@@ -239,7 +240,7 @@ def test_finalizer_exact_schema_and_backup_no_model_training(tmp_path, monkeypat
     result = finalize(path,out)
     assert result['published_rows'] == 1 and result['training_ready'] is False
     assert result['backup'].read_text() == 'prior output must survive in backup\n'
-    assert read_csv(out)[0] == ml.TRAINING_COLUMNS
+    assert read_csv(out)[0] == ml.TRAINING_COLUMNS + ['reviewed_at']
     assert len(ml.dataset(out)) == 1
     train.assert_not_called()
 

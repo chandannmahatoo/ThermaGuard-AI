@@ -10,6 +10,7 @@ htmlcov/
 
 node_modules/
 .next/
+.next-dev/
 dist/
 build/
 tsconfig.tsbuildinfo
@@ -31,3 +32,12 @@ models/*.json
 # Frontend local env
 frontend/.env*
 !frontend/.env.example
+# SQLite WAL sidecars contain live database pages; keep them local with *.db.
+*.db-wal
+*.db-shm
+
+# Firebase service-account credentials: keep in this ignored directory.
+backend/credentials/
+*firebase-adminsdk*.json
+*service-account*.json
+thermaguard-ai.json
