@@ -2,91 +2,606 @@
 
 Detect → validate → cluster → enrich → build shared features → classify only with a trained artifact → compare historical behavior → score risk → authorize → present/notify.
 
-`backend/app/main.py` owns HTTP orchestration, provider status and transactional event processing. `database.py` stores users, organizations, bounds assignments, provenance-bearing detections and events, and organization alerts. Event context, features, classification and risk are embedded JSON, avoiding duplicate tables. `providers.py` contains the one FIRMS client, one OSM client and one Copernicus satellite context client. `intelligence.py` owns clustering, features and risk. `ml.py` owns reviewed-data readiness, grouped training and prediction. `security.py` owns scrypt password hashing, JWT (algorithm owned by config), failed-login throttling and geographic access. `bootstrap.py` creates a real administrator without a source-controlled password.
+`backend/app/main.py` owns HTTP orchestration, provider status and transactional event processing. `database.py` stores users, organizations, bounds assignments, provenance-bearing detections and events, and organization alerts. Event context, features, classification and risk are embedded JSON, avoiding duplicate tables. `providers.py` contains the FIRMS, OSM and Copernicus satellite context clients. `intelligence.py` owns clustering, features and risk. `ml.py` owns reviewed-data readiness, grouped training and prediction. `security.py` owns password hashing, JWT, failed-login throttling and geographic access. `bootstrap.py` creates a real administrator without a source-controlled password.
 
-The frontend uses a single compact workspace with six views, a client-only Leaflet map, event detail drawer and copilot panel. The browser API client uses configured absolute API and health URLs; optional Next.js rewrites remain available for same-origin callers. Server roles and bounds, not UI visibility, enforce data access.
+The frontend uses a compact workspace with a client-only Leaflet map, event detail drawer, model/review views, Intelligence Lab, System Status and Copilot panel. Server roles and geographic bounds, not UI visibility, enforce data access.
 
-External HTTP requests have explicit timeouts and identify the project with a User-Agent header (public Overpass/Nominatim endpoints reject unidentified clients with 406). FIRMS failure returns 503 while existing data remains available. OSM failure records unavailable context. Satellite context calls the Copernicus Data Space Statistical API for NDVI statistics around an event (~2 km, no scene download) with reused OAuth2 tokens; missing credentials, provider failure and demo mode each produce an explicit unavailability reason, never fabricated values. Gemini errors return deterministic evidence summaries. SMTP failures persist on the alert; fixtures never send email.
+External HTTP requests have explicit timeouts and identify the project with a User-Agent header. FIRMS failure returns an error while existing stored data remains available. OSM failure records unavailable context. Copernicus satellite context reports explicit unavailability rather than fabricating values. Gemini errors fall back to deterministic evidence summaries. SMTP failures do not remove dashboard alerts.
 
-Analytics windows accept 24h/7d/30d/365d and return `available=false, reason=insufficient_history` when the visible dataset holds no records in the window; the dashboard renders an explicit notice instead of an empty chart.
+Analytics windows support 24h, 7d, 30d and 365d. When no records exist in the selected window, the API returns:
 
-The backend is designed for a single local process. SQLite and JSON keep setup small; production geospatial indexing and transactional model versioning are future work. The supplied workflow image is preserved at `docs/workflow.png`.
+```json
+{
+  "available": false,
+  "reason": "insufficient_history"
+}
+```
+
+The frontend displays an explicit insufficient-history state instead of inventing chart data.
+
+The backend is currently designed for a single-process local MVP. SQLite and JSON keep setup simple; PostgreSQL/PostGIS, production indexing, migrations and transactional model activation remain future work.
 
 Clustering groups nearby detections in space and time; it does not classify them. The Random Forest classifies, the deterministic risk engine scores, and Gemini explains authorized evidence without writing events or labels.
 
-## Data policy and sources
+---
 
-NASA FIRMS observations follow the official [area CSV API](https://firms.modaps.eosdis.nasa.gov/api/area/). Latitude/longitude, date/time, FRP and brightness are validated; confidence stays in original sensor-specific form instead of being falsely equated to model confidence. Raw rows, source identity, retrieval time, observed time, provider, processing version and demo flag are retained. Deduplication hashes observation identity, not mutable retrieval times.
+## System Workflow
 
-OpenStreetMap context uses [Overpass QL](https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL), requesting nodes and way geometries within 5 km. Requests identify the project with a User-Agent header; unauthenticated client libraries sending no User-Agent are rejected with HTTP 406. Distances are computed in a local azimuthal equidistant projection to geometry boundaries/interiors, not arbitrary polygon centers. Supported context includes industrial land, refineries, factories, power plants, forest, farmland and residential areas, plus facility counts and the land-use class at the event location. No match means unknown beyond the query area; absence of tagging is not proof of absence. Complex relations without directly usable geometry are skipped. OSM data attribution is required; the map uses and credits OpenStreetMap standard tiles. State/city lookup uses Nominatim returned bounding boxes, not invented administrative polygons; boxes are approximate filters.
+```mermaid
+flowchart TD
 
-Satellite context is fetched per event from the Copernicus Data Space Statistical API (Sentinel Hub compatible) using OAuth2 client credentials: a ~2 km bounding box around the event, Sentinel-2 L2A, least-cloudy mosaicking, daily aggregation over a window from seven days before to seven days after the event, capped at the current time, and an evalscript computing NDVI server-side. Only compact statistics (mean NDVI, sample counts, interval date) are read back; no scenes, rasters or heavy processing stacks are used. Values are reported only when real pixels were observed; otherwise the context states `credentials_missing`, `provider_unavailable` or `demo_mode` and NDVI stays null. Provider, source, retrieval time and image reference are stored alongside the value for provenance.
+    A["NASA FIRMS<br/>Thermal Observations"]
+    B["Observation Validation<br/>+ Raw Provenance"]
+    C["Deduplication"]
+    D["Deterministic Spatial-Temporal Clustering"]
+    E["Thermal Events"]
 
-Satellite land-cover and built-up fractions remain null; only measured NDVI statistics from the Copernicus adapter are ever reported, and only for real (non-demo) events in real mode. Do not replace these with invented values.
+    F["OSM Context"]
+    G["Copernicus Context"]
+    H["Weather / Air Quality"]
+    I["Historical Context"]
 
-`data/demo/detections.csv` is the only deterministic demo fixture. Its coordinates/thermal values illustrate application behavior and are not real-world observations. They carry `is_demo=true` at ingestion. Live and demo data are filtered independently throughout clustering, APIs and alerts. Real synchronization is blocked in demo mode. Training requires explicitly non-demo reviewed records.
+    J["Shared Feature Engineering"]
+    K["Reviewed-Data Random Forest"]
+    L["Classification + Confidence"]
+    M["Deterministic Risk Assessment"]
+    N["Alerts / Notifications / Dashboard"]
+    O["Human Review"]
+    P["Future Model Revisions"]
 
-`data/templates/reviewed_labels.csv` contains only an input header. A human reviewer is responsible for labels and source traceability. Do not copy demo values into it as real records.
+    A --> B --> C --> D --> E
 
-Review workflow: `backend/export_review_candidates.py` exports all real non-demo events to `data/review_candidates.csv` with reviewer-assistance context (coordinates, timestamps, land use, abnormality, risk, facility names). Re-exports preserve existing manual review fields for matching events, append new events deterministically and report removed/reclustered events instead of discarding them silently. Assistance columns are ignored by the training pipeline (`ml.py` reads exactly `REVIEW_META + FEATURES`). Humans fill `label`, `split_group`, `reviewer` and `source_reference` and set `reviewed=true`; the canonical workflow never infers labels. `backend/validate_review_candidates.py` reports duplicates, invalid labels, demo contamination, incomplete reviewed rows and the exact training-gate shortfall. `backend/finalize_reviewed_labels.py` publishes only complete reviewed rows to `data/reviewed_labels.csv` and refuses to write anything when a reviewed row is invalid.
+    E --> F
+    E --> G
+    E --> H
+    E --> I
 
-Reviewer safety additions: `review_event_summary.py` prints only stored non-demo event evidence and an unchecked neutral checklist. `prepare_review_row.py` is read-only unless explicit metadata flags are supplied; it never updates ML feature cells. `review_progress.py` uses the unchanged `ml.dataset` eligibility and readiness gate. The exporter and finalizer now preserve replaced CSVs in timestamped `data/backups/` files, reject duplicate IDs, and avoid silently losing custom reviewer notes or removed/reclustered rows. See the exact contract and commands in [MODEL.md](MODEL.md#human-review-csv-contract-audited-against-feature-version-2). These canonical tools do not generate labels or approvals. The optional assisted_review.py helper proposes heuristics for human confirmation; its suggestions are not independent evidence.
+    F --> J
+    G --> J
+    H --> J
+    I --> J
 
-Real acquisition plans and packet generation: see [REVIEW_ACQUISITION.md](REVIEW_ACQUISITION.md).
-Search zones and suggested cohort names are reviewer assistance only. New stored
-FIRMS detections retain their raw observations and acquisition query metadata.
-Approved evidence changes stop acquisition for human reconciliation.
+    J --> K --> L --> M --> N --> O --> P
+```
 
-## Multi-source FIRMS ingestion
+---
 
-The canonical supported hotspot schema catalog is `config.FIRMS_SOURCES`. The
-provider intersects it with NASA's authenticated [data availability API](https://firms.modaps.eosdis.nasa.gov/api/data_availability/)
-and uses the returned min/max dates, cached for five minutes with a single-flight
-lock. Availability failures stop ingestion safely; unsupported or out-of-range
-selections return 422. Date limits are never compiled into the application.
-Burned-area products (BA_MODIS/BA_VIIRS), GOES and Landsat are not included in this
-hotspot schema adapter, even when the catalog lists them.
+## Data Policy and Sources
 
-`GET /api/v1/firms/sources` returns authenticated, credential-free source metadata.
-`POST /api/v1/firms/sync` accepts optional `sources`, selecting distinct NRT sources.
-The default remains S-NPP for compatibility; `FIRMS_LIVE_SOURCES` can select, for
-example, S-NPP and NOAA-20. Sequential requests bound concurrency to one. The
-combined accepted-observation budget is checked before any source is persisted;
-if a source fails, the live batch is not partially inserted. A metadata refresh
-adds at most one request to the configured area-request budget.
+NASA FIRMS observations follow the official area CSV API.
 
-The existing historical backfill route accepts any supported, currently available
-source, with SP preferred for historical acquisition. It validates the entire
-requested interval before downloading, chunks into at most five days, and caps
-area requests with `FIRMS_MAX_REQUESTS` (default/max 12; up to 60 days per call).
-Earlier successful chunks remain committed if a later chunk fails; replay is
-idempotent. Historical processing retains its no-notification/no-live-enrichment
-policy. The existing acquisition CLI remains the reviewed-evidence-preserving
-path; later explicit enrichment and human review precede training publication.
+The system validates:
 
-Detections retain the original raw row plus dataset, instrument, satellite,
-version, observed/acquired time, scan, track, primary/secondary measurements and
-sensor-band names. VIIRS uses bright_ti4/bright_ti5; MODIS uses
-brightness/bright_t31. Missing optional measurements remain null. Neither schema
-is filled with the other's band values. Generic `brightness` and legacy event
-brightness summaries remain descriptive compatibility fields, not harmonized
-measurements; comparisons across sensors require scientific caution.
+- latitude
+- longitude
+- acquisition date/time
+- FRP
+- brightness
+- sensor-specific confidence
 
-Identity includes dataset, satellite, instrument, normalized coordinates and UTC
-observation time. Retrieval time and revised version values do not create a new
-observation. Separate sensors and NRT/SP processing families remain separate
-observations; they can share one spatial-temporal event. NRT/SP can describe the
-same physical overpass, so counts are not independent confirmations.
+Confidence is preserved in its original sensor-specific form and is not treated as model confidence.
 
-Legacy records with documented acquisition_query.source can match the new
-identity without changing their stored IDs or payloads. If an incoming observation
-matches a legacy record whose dataset is unknown, ingestion refuses it for human
-provenance reconciliation rather than guessing a source or creating a second row.
-No migration or relabeling occurs automatically. New clustering retains source
-counts, per-band sensor summaries and grouped sensor/version/time provenance.
+The system retains:
 
-`GET /api/v1/firms/detections?offset=0&limit=100` provides paginated raw observations
-(maximum page size 500) only from events visible to the caller, matching the
-existing event-evidence authorization boundary. The event map remains unchanged;
-the event drawer shows source counts and already exposes raw evidence. No second
-map mode or additional primary-map markers were introduced.
+- raw source row
+- source identity
+- retrieval time
+- observation time
+- provider
+- processing version
+- demo flag
+- sensor / instrument metadata
+- scan / track information
+- source-specific thermal measurements
+
+Deduplication uses observation identity rather than mutable retrieval timestamps.
+
+---
+
+## OpenStreetMap Context
+
+OpenStreetMap context is retrieved through Overpass.
+
+Supported context includes:
+
+- industrial land
+- refineries
+- factories
+- thermal power plants
+- forest
+- farmland
+- residential areas
+- facility counts
+- land-use class at the event location
+
+Distances are calculated using projected geometry rather than simple polygon-center distance where possible.
+
+No OSM match means:
+
+> unknown beyond the query coverage
+
+It must not be interpreted as proof that no facility exists.
+
+Complex relations without usable geometry may be skipped.
+
+OpenStreetMap attribution must be preserved.
+
+---
+
+## Satellite Context
+
+Satellite context is retrieved from the Copernicus Data Space Statistical API.
+
+Current workflow:
+
+- Sentinel-2 L2A
+- bounded area around event
+- least-cloudy mosaicking
+- server-side NDVI evaluation
+- compact statistics only
+- no complete scene/raster downloads
+
+Successful results may contain:
+
+- mean NDVI
+- sample count
+- acquisition interval/date
+- provider provenance
+
+If real pixels are unavailable, values remain null and an explicit reason is returned.
+
+Examples:
+
+```text
+credentials_missing
+provider_unavailable
+demo_mode
+```
+
+Built-up and land-cover fractions remain unavailable unless actually implemented.
+
+Do not replace them with synthetic values.
+
+---
+
+## Demo Data Policy
+
+`data/demo/detections.csv` is the deterministic demo fixture.
+
+Demo observations:
+
+- are fictional
+- use illustrative coordinates
+- have `is_demo=true`
+- remain separate from real observations
+- cannot be used as real training evidence
+
+Real synchronization is blocked in demo mode.
+
+Training requires explicitly reviewed, non-demo records.
+
+---
+
+## Human Review Workflow
+
+Export review candidates:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python backend/export_review_candidates.py
+```
+
+Output:
+
+```text
+data/review_candidates.csv
+```
+
+The exporter preserves manual review fields when an event remains compatible.
+
+Human reviewers are responsible for fields such as:
+
+```text
+label
+split_group
+reviewer
+source_reference
+reviewed
+reviewed_at
+review_notes
+```
+
+The canonical workflow never automatically converts model predictions into ground-truth labels.
+
+Validation:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python backend/validate_review_candidates.py
+```
+
+Finalize reviewed rows:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python backend/finalize_reviewed_labels.py
+```
+
+Output:
+
+```text
+data/reviewed_labels.csv
+```
+
+The finalizer rejects incomplete or invalid reviewed rows instead of silently publishing them.
+
+---
+
+## Reviewer Safety
+
+Useful read-only tools:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python \
+backend/review_event_summary.py EVENT_ID
+```
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python \
+backend/prepare_review_row.py EVENT_ID
+```
+
+Progress:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python \
+backend/review_progress.py
+```
+
+Model V2 status:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python \
+backend/review_progress.py --v2
+```
+
+Dry-run provenance reconciliation:
+
+```bash
+PYTHONPATH=backend ./.venv/bin/python \
+backend/review_progress.py --reconcile-sources
+```
+
+Review tools must not:
+
+- generate ground-truth labels
+- approve their own suggestions
+- fabricate reviewers
+- fabricate timestamps
+- overwrite reviewed evidence silently
+
+---
+
+## Multi-Source FIRMS Ingestion
+
+Supported source metadata is exposed through:
+
+```text
+GET /api/v1/firms/sources
+```
+
+Supported source families include:
+
+### NRT
+
+```text
+VIIRS_SNPP_NRT
+VIIRS_NOAA20_NRT
+VIIRS_NOAA21_NRT
+MODIS_NRT
+```
+
+### Historical / Standard Processing
+
+```text
+VIIRS_SNPP_SP
+VIIRS_NOAA20_SP
+MODIS_SP
+```
+
+The provider intersects configured sources with NASA FIRMS availability metadata.
+
+Unsupported or unavailable source/date combinations are rejected rather than guessed.
+
+---
+
+## Live FIRMS Sync
+
+Endpoint:
+
+```text
+POST /api/v1/firms/sync
+```
+
+Example:
+
+```json
+{
+  "sources": [
+    "VIIRS_SNPP_NRT",
+    "VIIRS_NOAA20_NRT"
+  ],
+  "bounds": [72.5, 21.0, 72.8, 21.2],
+  "days": 1
+}
+```
+
+The combined accepted-observation budget is checked before persistence.
+
+Provider failures must not result in silently fabricated observations.
+
+---
+
+## Historical FIRMS Backfill
+
+Historical endpoint:
+
+```text
+POST /api/v1/firms/history/backfill
+```
+
+Historical collection:
+
+- validates the requested source/date interval
+- uses available source metadata
+- chunks requests into bounded date windows
+- preserves idempotency
+- suppresses live notifications
+- avoids automatic model training
+- keeps provenance
+
+SP products are preferred for historical collection when available.
+
+---
+
+## Observation Identity
+
+Observation identity is derived from fields such as:
+
+- dataset
+- satellite
+- instrument
+- normalized latitude
+- normalized longitude
+- UTC observation time
+
+Retrieval time does not create a new observation.
+
+Different sensors remain separate observations even when they describe the same physical event.
+
+NRT and SP records can represent the same physical overpass, so source counts must not automatically be interpreted as independent confirmations.
+
+---
+
+## Raw Detection API
+
+Authorized raw observations are exposed through:
+
+```text
+GET /api/v1/firms/detections?offset=0&limit=100
+```
+
+Maximum page size:
+
+```text
+500
+```
+
+Returned observations respect the same authorization boundary as visible events.
+
+A raw marker represents one FIRMS observation.
+
+An event marker represents a spatial-temporal cluster.
+
+Neither constitutes human review.
+
+---
+
+## ML Responsibilities
+
+The machine-learning pipeline:
+
+- uses reviewed-only training records
+- excludes demo records
+- uses group-aware splitting
+- preserves a fixed feature contract
+- tracks feature version
+- persists model metadata
+- evaluates on held-out data
+- returns null classification when no compatible trained artifact exists
+
+The current baseline uses a Random Forest with imputation.
+
+Classification is separate from risk.
+
+---
+
+## Five Current Classification Classes
+
+```text
+industrial_fire
+persistent_industrial_thermal_source
+agricultural_vegetation_fire
+natural_thermal_event
+possible_false_positive
+```
+
+These are the model output classes.
+
+They must not be treated as human ground truth unless confirmed by review.
+
+---
+
+## Risk Engine
+
+Risk is deterministic and separate from ML probability.
+
+Conceptually:
+
+```text
+event evidence
+→ configured engineering weights
+→ deterministic risk score
+→ risk level
+→ alert threshold evaluation
+```
+
+Risk weights are heuristics, not validated safety estimates.
+
+---
+
+## Gemini Copilot
+
+Gemini receives only bounded authorized evidence.
+
+It can:
+
+- explain an event
+- summarize evidence
+- explain classification
+- explain risk
+- describe missing context
+- compare available history
+
+It cannot:
+
+- modify classification
+- modify risk
+- write labels
+- update events
+- acknowledge alerts
+- change database records
+
+Missing information must remain explicitly unavailable.
+
+---
+
+## Alerts and Notifications
+
+Alerts are generated from configured deterministic-risk thresholds.
+
+Notification channels may include:
+
+- dashboard
+- email
+- Firebase browser push
+
+Provider failure does not remove the underlying alert.
+
+Notification delivery and event classification remain independent.
+
+---
+
+## Authorization
+
+Authorization is enforced in the backend.
+
+Relevant controls include:
+
+- authenticated user
+- organization
+- assigned geographic area
+- admin privileges
+- event visibility
+- alert ownership
+
+Frontend hiding is not a security mechanism.
+
+---
+
+## Provider Failure Policy
+
+Provider failures are isolated.
+
+Examples:
+
+```text
+FIRMS failure
+→ sync fails safely
+
+OSM failure
+→ event remains available with context unavailable
+
+Copernicus failure
+→ NDVI remains null
+
+Weather/AQ failure
+→ provider context unavailable
+
+Gemini failure
+→ deterministic explanation fallback
+
+SMTP failure
+→ dashboard alert remains available
+```
+
+The system must prefer:
+
+```text
+Unavailable
+```
+
+over fabricated values.
+
+---
+
+## Key Principle
+
+ThermaGuard keeps four concepts separate:
+
+```text
+Observed Evidence
+      ↓
+ML Interpretation
+      ↓
+Deterministic Risk
+      ↓
+AI Explanation
+```
+
+These must not be merged into a single opaque "AI result".
+
+---
+
+## Production Direction
+
+Future engineering work includes:
+
+- PostgreSQL/PostGIS
+- database migrations
+- spatial/time indexes
+- stable event identity
+- reviewed-evidence versioning
+- dataset versioning
+- model registry
+- atomic model activation
+- background task workers
+- durable notification retries
+- immutable audit logs
+- MFA
+- account recovery
+- formal drift monitoring
+- reviewer consensus workflow
+- domain validation
+
+---
+
+## Disclaimer
+
+ThermaGuard AI is a hackathon and research-oriented engineering prototype.
+
+It is not a certified:
+
+- emergency-response platform
+- industrial-safety system
+- disaster-management system
+- environmental-compliance system
+
+Any operational use requires independent verification and appropriate domain expertise.
