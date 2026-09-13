@@ -19,11 +19,12 @@ const leafletMock = {
   Tooltip: ({ children }) => React.createElement('div', { className: 'tooltip' }, children),
   useMap: () => ({ flyTo: () => {}, fitBounds: () => {} }),
 };
+function loadGrouping(){const exports={};vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/mapGrouping.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports});return exports;}
 function loadTsx(path, sandbox = {}) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   const exports = {};
   // Intercept browser-only map modules so SSR-style tests never touch leaflet.
-  const req = name => (name === 'react-leaflet' ? leafletMock : require(name));
+  const req = name => (name === 'react-leaflet' ? leafletMock : name === '../lib/mapGrouping' ? loadGrouping() : require(name));
   vm.runInNewContext(
     ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true, target: ts.ScriptTarget.ES2022 },

@@ -172,8 +172,8 @@ def model_v2_report(path=None, session_factory=None, published=None):
         if not event:errors.append('Real event missing')
         else:
             fresh=ml.candidate_row(event)
-            fields=[field for field in ml.FEATURES+ml.ASSISTANCE_COLUMNS if field not in ml.SENSOR_COLUMNS]
-            if any(field in row and row[field] != ('' if fresh.get(field) is None else str(fresh[field])) for field in fields):
+            from app.review_evidence import changes
+            if changes(row, fresh)['material']:
                 issues['stale_reviewed_events'].append(key);errors.append('Reviewed evidence differs from stored event')
             if 'unknown_legacy' in source_sets[key]:errors.append('Unknown source provenance')
         if errors:issues['review_quality_failures'][key]=errors

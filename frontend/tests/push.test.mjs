@@ -38,7 +38,7 @@ test('backend must explicitly confirm registration',async()=>{const h=helper({re
 test('worker activation is awaited and times out rather than hanging',async()=>{const h=helper();const installing=new EventTarget();installing.state='installing';const promise=h.waitForActiveWorker({installing},100);installing.state='activated';installing.dispatchEvent(new Event('statechange'));await promise;installing.state='installing';await assert.rejects(h.waitForActiveWorker({installing},5),/timed out/)});
 test('background notification payload is not displayed twice; data payload is displayed once',async()=>{
  let callback;let count=0;const source=readFileSync(new URL('../public/firebase-messaging-sw.js',import.meta.url),'utf8');
- vm.runInNewContext(source,{importScripts(){},firebase:{initializeApp(){},messaging:()=>({onBackgroundMessage:fn=>callback=fn})},self:{THERMAGUARD_FIREBASE_CONFIG:{},location:{origin:'http://localhost:3000'},registration:{showNotification:async()=>{count++}}}});
+ vm.runInNewContext(source,{importScripts(){},firebase:{initializeApp(){},messaging:()=>({onBackgroundMessage:fn=>callback=fn})},self:{addEventListener(){},THERMAGUARD_FIREBASE_CONFIG:{},location:{origin:'http://localhost:3000'},registration:{showNotification:async()=>{count++}}}});
  await callback({notification:{title:'Notice'}});assert.equal(count,0);await callback({data:{title:'Notice',body:'Evidence'}});assert.equal(count,1);assert.doesNotMatch(source,/console\.log|apiKey:/);
 });
 
@@ -47,7 +47,7 @@ test('background notification payload is not displayed twice; data payload is di
 function ui(register=async()=>{},enabled=true) {
  const state=[];let index=0;
  const hooks={...React,useState:init=>{const i=index++;if(!(i in state))state[i]=typeof init==='function'?init():init;return [state[i],v=>{state[i]=typeof v==='function'?v(state[i]):v}]},useEffect(){}};
- const Component=compile('../components/NotificationSettings.tsx',{'react':hooks,'../lib/pushNotifications':{registerBrowserPush:register},'../lib/api':{getStoredToken:()=>assert.fail('Use current session prop')}}).default;
+ const Component=compile('../components/NotificationSettings.tsx',{'react':hooks,'./UI':compile('../components/UI.tsx',{'react':hooks}),'../lib/pushNotifications':{registerBrowserPush:register},'../lib/api':{getStoredToken:()=>assert.fail('Use current session prop')}}).default;
  const props={authToken:'session',notif:{notifications_enabled:enabled,latitude:null,longitude:null,alert_radius_km:10},notifBusy:false,onSaveNotif(){},isAdmin:false,organizations:[],assignments:[]};
  function render(){index=0;return Component(props)}
  function nodes(node){return node&&typeof node==='object'?[node,...[node.props?.children].flat(Infinity).flatMap(nodes)]:[]}
@@ -58,3 +58,9 @@ test('UI prevents registration when saved preferences are disabled, even if loca
 test('UI renders loading and confirmed success and sends current session',async()=>{let done;const u=ui((enabled,token)=>{assert.equal(enabled,true);assert.equal(token,'session');return new Promise(resolve=>done=resolve)});const pending=u.find(u.render(),'Enable Browser Push').props.onClick();assert.match(u.text(u.render()),/Enabling Push/);done();await pending;assert.match(u.text(u.render()),/Browser push notifications are enabled/)});
 test('UI failure is visible and allows retry',async()=>{const u=ui(async()=>{throw Error('Registration could not complete')});await u.find(u.render(),'Enable Browser Push').props.onClick();assert.match(u.text(u.render()),/Could not enable browser push notifications/);assert.equal(u.find(u.render(),'Enable Browser Push').props.disabled,false)});
 test('UI cannot race preference saving',async()=>{let calls=0;const u=ui(async()=>{calls++});u.props.notifBusy=true;await u.find(u.render(),'Enable Browser Push').props.onClick();assert.equal(calls,0)});
+test('offline navigation shell never caches or intercepts API requests',async()=>{
+ let handler;let response;const source=readFileSync(new URL('../public/firebase-messaging-sw.js',import.meta.url),'utf8');
+ vm.runInNewContext(source,{URL,Response,fetch:async()=>{throw new Error('offline')},importScripts(){},firebase:{initializeApp(){},messaging:()=>({onBackgroundMessage(){}})},self:{addEventListener:(type,fn)=>{if(type==='fetch')handler=fn},location:{origin:'http://localhost:3000'},registration:{}}});
+ handler({request:{mode:'cors',url:'http://localhost:3000/api/v1/events'},respondWith:()=>assert.fail('API must remain network-only')});
+ handler({request:{mode:'navigate',url:'http://localhost:3000/'},respondWith:p=>response=p});const result=await response;assert.equal(result.status,503);assert.match(await result.text(),/No incident data is stored/);assert.doesNotMatch(source,/caches\.open|cache\.put/);
+});

@@ -14,3 +14,12 @@ messaging.onBackgroundMessage(payload => {
     data: {url: self.location.origin},
   });
 });
+
+// Network-only navigation with a safe offline shell. Never cache protected data.
+self.addEventListener('fetch', event => {
+  if (event.request.mode !== 'navigate' || new URL(event.request.url).origin !== self.location.origin) return;
+  event.respondWith(fetch(event.request).catch(() => new Response(
+    '<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ThermaGuard offline</title><body><main><h1>ThermaGuard is offline</h1><p>Reconnect to load your authorized monitoring workspace. No incident data is stored for offline access.</p><a href="/">Retry connection</a></main></body></html>',
+    {status:503,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}}
+  )));
+});

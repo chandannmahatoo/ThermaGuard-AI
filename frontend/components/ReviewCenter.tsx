@@ -10,12 +10,13 @@ import {
   FileCheck,
   GitBranch,
 } from 'lucide-react';
+import type {ReviewCandidate} from '../lib/reviewCandidates';
 import type { ModelStatus } from '../lib/api';
 import { StatusBadge } from './StatusBadge';
 
 type ReviewCenterProps = {
   model: ModelStatus | null;
-  candidates?: {event_id:string;reviewed:string;label:string}[] | null;
+  candidates?: ReviewCandidate[] | null;
   readiness?: {reviewed_rows:number;eligible_rows:number;classes_present:number;classes_total:number;split_groups:number;training_ready:boolean;missing:string[];problems:string[]} | null;
   isAdmin: boolean;
   trainBusy: boolean;
@@ -38,6 +39,7 @@ export default function ReviewCenter({
 
   return (
     <div className="review-center-container">
+      <section className="review-card"><h2>Read-only review queue</h2><p>Review writes require a backend endpoint. This interface does not save or approve labels.</p>{candidates?.length?<div className="data-table-scroll" role="region" aria-label="Review candidates" tabIndex={0}><table className="data-table"><caption>First 100 exported candidates · current evidence must be checked before review</caption><thead><tr><th>Event</th><th>Recorded label</th><th>Reviewed snapshot</th><th>Reviewer / reference</th><th>Split group</th><th>Review timestamp / notes</th></tr></thead><tbody>{candidates.slice(0,100).map((c,i)=><tr key={`${c.event_id}-${i}`}><th scope="row">{c.event_id}</th><td>{c.label?.replaceAll('_',' ')||'Unlabeled'}</td><td>{c.reviewed||'Unavailable'}{c.review_stale==='true'&&<strong className="text-amber"> Review stale</strong>}</td><td>{c.reviewer||'Unavailable'}<br/>{c.source_reference||'Reference unavailable'}</td><td>{c.split_group||'Unavailable'}</td><td>{c.reviewed_at||'Timestamp unavailable'}<br/>{c.notes||'Notes unavailable'}</td></tr>)}</tbody></table></div>:<p>{isAdmin?'No candidate export available.':'Candidate export requires administrator access.'}</p>}</section>
       {/* Header */}
       <div className="review-center-header">
         <div>

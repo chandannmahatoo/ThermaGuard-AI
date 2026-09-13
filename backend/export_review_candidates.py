@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import Session, Event
 from app.ml import REVIEW_META, ASSISTANCE_COLUMNS, candidate_row
 from app.intelligence import FEATURES
+from app.review_evidence import changes
 from review_common import MANUAL_FIELDS, read_csv, reviewed_errors, write_csv
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,8 +38,8 @@ def export_candidates(path=None, session_factory=None, freeze_reviewed=False):
             if prior:
                 if prior.get('is_demo', '').lower() != 'false':
                     raise ValueError(f'{item.id}: prior is_demo is not false; resolve provenance before export')
-                evidence_changed = any(prior[key] != row[key] for key in FEATURES + ASSISTANCE_COLUMNS if key in prior)
-                if prior.get('reviewed', '').strip().lower() == 'true' and not reviewed_errors(prior) and evidence_changed:
+                evidence_changed = bool(changes(prior, row)['material'])
+                if prior.get('reviewed', '').strip().lower() == 'true' and evidence_changed:
                     raise ValueError(f'{item.id}: reviewed evidence changed. Prior CSV is untouched. A reviewer must explicitly reopen review (reviewed=false) before refreshing this row.')
                 for key in MANUAL_FIELDS:
                     if key in prior:

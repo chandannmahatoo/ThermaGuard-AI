@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, FormEvent } from 'react';
+import {ErrorState} from './UI';
 import { registerBrowserPush } from '../lib/pushNotifications';
 import {
   Bell,
@@ -22,6 +23,8 @@ import {
 
 type NotificationSettingsProps = {
   authToken?: string;
+  loadError?:string;
+  onRetry?:()=>void;
   notif: NotificationPreferences | null;
   notifBusy: boolean;
   onSaveNotif: (next: NotificationPreferences) => void;
@@ -53,6 +56,7 @@ export function normalizeFormState(raw: NotificationPreferences | null): Notific
 
 export default function NotificationSettings({
   authToken: sessionToken,
+  loadError,onRetry,
   notif,
   notifBusy,
   onSaveNotif,
@@ -335,9 +339,9 @@ export default function NotificationSettings({
             </div>
           </div>
         ) : (
-          <p className="empty">Loading notification preferences…</p>
+          <>{loadError?<ErrorState message={loadError} onRetry={onRetry}/>:<p className="empty" role="status">Loading notification preferences…</p>}</>
         )}
-      <p className="small">Email and push share the backend subscription setting. Independent channel and critical-only preferences are not supported by this API. Device registration and Firebase status must be verified before push delivery can be expected.</p></section>
+      {loadError&&notif&&<p className="notice-banner" role="status">Saved preferences shown; refresh failed. <button className="button" onClick={onRetry}>Retry preferences</button></p>}<p className="small">Email and push share the backend subscription setting. Independent channel and critical-only preferences are not supported by this API. Device registration and Firebase status must be verified before push delivery can be expected.</p></section>
 
       {/* Administrator Configuration (Admin only) */}
       {isAdmin && (

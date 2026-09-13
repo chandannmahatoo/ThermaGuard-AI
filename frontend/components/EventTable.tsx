@@ -85,7 +85,8 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
   const paginatedEvents = sortedEvents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
-    <div className="event-table-wrapper">
+    <div className="event-table-wrapper" aria-busy={busy}>
+      <div className="event-sort-controls"><label>Sort events <select value={sortField} onChange={e=>{setSortField(e.target.value as SortField);setPage(1)}}><option value="risk">Risk score</option><option value="frp">Mean FRP</option><option value="detections">Detection count</option><option value="time">Last observed</option></select></label><button className="button" onClick={()=>setSortOrder(sortOrder==='asc'?'desc':'asc')}>{sortOrder==='asc'?'Ascending':'Descending'}</button>{busy&&<span role="status">Refreshing results…</span>}</div>
       <div className="table-responsive-container">
         <table className="geospatial-table">
           <thead>
@@ -98,6 +99,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                 tabIndex={0}
                 onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('risk')}
+                aria-sort={sortField==='risk'?(sortOrder==='asc'?'ascending':'descending'):'none'}
                 title="Sort by deterministic risk score"
               >
                 <div className="header-cell-sort">
@@ -110,6 +112,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                 tabIndex={0}
                 onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('frp')}
+                aria-sort={sortField==='frp'?(sortOrder==='asc'?'ascending':'descending'):'none'}
                 title="Sort by mean fire radiative power"
               >
                 <div className="header-cell-sort">
@@ -122,6 +125,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                 tabIndex={0}
                 onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('detections')}
+                aria-sort={sortField==='detections'?(sortOrder==='asc'?'ascending':'descending'):'none'}
                 title="Sort by detection count"
               >
                 <div className="header-cell-sort">
@@ -129,12 +133,13 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                   {sortField === 'detections' && (sortOrder === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
                 </div>
               </th>
-              <th>First Seen</th><th>Review Status</th><th>Context Coverage</th>
+              <th>Persistence / sources</th><th>First Seen</th><th>Review Status</th><th>Context Coverage</th>
               <th
                 className="sortable-header"
                 tabIndex={0}
                 onKeyDown={e=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();e.currentTarget.click()}}}
                 onClick={() => handleSort('time')}
+                aria-sort={sortField==='time'?(sortOrder==='asc'?'ascending':'descending'):'none'}
                 title="Sort by last observed timestamp"
               >
                 <div className="header-cell-sort">
@@ -147,7 +152,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
           <tbody>
             {busy && events.length === 0 ? (
               <tr>
-                <td colSpan={10} className="table-loading-cell">
+                <td colSpan={11} className="table-loading-cell">
                   <div className="table-skeleton-row" />
                   <div className="table-skeleton-row" />
                   <div className="table-skeleton-row" />
@@ -155,7 +160,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
               </tr>
             ) : paginatedEvents.length === 0 ? (
               <tr>
-                <td colSpan={10} className="table-empty-cell">
+                <td colSpan={11} className="table-empty-cell">
                   <Radio size={24} className="empty-icon" />
                   <p>No thermal events match the current filters.</p>
                 </td>
@@ -248,7 +253,7 @@ export default function EventTable({ events, selectedId, onSelect, busy }: Event
                     </td>
 
                     {/* Context Coverage Indicators */}
-                    <td>{fmtTime(e.start_time)}</td><td><span className="review-state-chip">{e.review_status || 'Not available'}</span></td>
+                    <td data-label="Persistence / sources">{e.persistence_days ?? 'Unavailable'} days<br/><small>{Object.keys(e.source_counts||{}).join(', ') || 'Source unavailable'}</small></td><td>{fmtTime(e.start_time)}</td><td><span className="review-state-chip">{e.review_status || 'Not available'}</span><small>Event: {e.status || 'Unavailable'}</small></td>
                     <td className="cell-context">
                       <ContextCoverage context={e.context} compact/>
                     </td>

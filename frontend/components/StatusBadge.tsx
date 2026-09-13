@@ -6,7 +6,7 @@ export type ProviderHealthState = 'healthy' | 'configured' | 'disabled' | 'not_c
 export type SystemReadinessState = 'REAL' | 'DEMO' | 'UNAVAILABLE' | 'BLOCKED' | 'FALLBACK';
 
 export function RiskBadge({ level }: { level: RiskLevel | undefined | null }) {
-  const norm = (level || 'Normal').toLowerCase();
+  const norm = (level || 'Unknown').toLowerCase();
   return <span className={`badge ${norm}`}>{level || 'Unknown'}</span>;
 }
 

@@ -399,7 +399,9 @@ async def process(db, observations, enrich=True, create_notifications=True, comm
     started = time.monotonic()
     counts = dict(new_detections=0, updated_events=0, new_events=0, unchanged_events=0,
                   osm_requests_attempted=0, satellite_requests_attempted=0,
-                  enrichment_deferred_events=0)
+                  enrichment_deferred_events=0, thermal_updated_events=0,
+                  evidence_updated_events=0, metadata_only_updated_events=0,
+                  derived_only_updated_events=0)
     try:
         # Stage A: persist real observations quickly, then release the snapshot read.
         with db.no_autoflush:
@@ -527,6 +529,17 @@ async def process(db, observations, enrich=True, create_notifications=True, comm
                     db.add(Event(id=event['id'], is_demo=event['is_demo'], payload=event))
                 elif saved.payload != event:
                     counts['updated_events'] += 1
+                    from app.review_evidence import changes
+                    thermal_keys = ('detection_ids', 'latitude', 'longitude', 'start_time', 'last_seen_time',
+                                    'mean_frp', 'max_frp', 'detection_count', 'persistence_days', 'sensor_summary', 'source_counts')
+                    if any(saved.payload.get(key) != event.get(key) for key in thermal_keys):
+                        counts['thermal_updated_events'] += 1
+                    elif changes(ml.candidate_row(saved.payload), ml.candidate_row(event))['material']:
+                        counts['evidence_updated_events'] += 1
+                    elif saved.payload.get('classification') != event.get('classification') or saved.payload.get('risk') != event.get('risk'):
+                        counts['derived_only_updated_events'] += 1
+                    else:
+                        counts['metadata_only_updated_events'] += 1
                     saved.payload = event
                 else:
                     counts['unchanged_events'] += 1

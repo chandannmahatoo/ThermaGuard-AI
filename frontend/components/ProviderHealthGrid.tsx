@@ -19,9 +19,13 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import type { ProviderStatusResponse, ProviderHealthEntry } from '../lib/api';
+import {LoadingSkeleton,ErrorState} from './UI';
 import { ProviderBadge, StatusBadge, type SystemReadinessState } from './StatusBadge';
 
 type ProviderHealthGridProps = {
+  loading?:boolean;
+  error?:string;
+  onRetry?:()=>void;
   providerHealth: ProviderStatusResponse | null;
   isAdmin: boolean;
   demo: boolean;
@@ -149,6 +153,7 @@ const mapStatusToReadiness = (state: string): SystemReadinessState => {
 
 export default function ProviderHealthGrid({
   providerHealth,
+  loading=false,error,onRetry,
   isAdmin,
   demo,
   syncBusy,
@@ -185,6 +190,9 @@ export default function ProviderHealthGrid({
         </div>
       )}
 
+      {loading&&<LoadingSkeleton label="Refreshing provider telemetry"/>}
+      {error&&<ErrorState message={error} onRetry={onRetry}/>}
+      {error&&providerHealth&&<p role="status">Previously recorded telemetry shown; refresh failed.</p>}
       {/* Grid of 11 provider cards */}
       <div className="provider-cards-grid">
         {PROVIDER_METADATA.map((meta) => {
@@ -245,6 +253,7 @@ export default function ProviderHealthGrid({
         })}
       </div>
 
+      <section className="review-card"><h3>Provider comparison</h3><div className="data-table-scroll" role="region" aria-label="Provider telemetry comparison" tabIndex={0}><table className="data-table"><caption>Latest recorded interactions · missing values remain unavailable</caption><thead><tr><th>Provider</th><th>Health</th><th>Last success</th><th>Last failure</th><th>Latency</th><th>Error category</th></tr></thead><tbody>{PROVIDER_METADATA.map(meta=>{const entry=providerHealth?.providers[meta.key];return <tr key={meta.key}><th scope="row">{meta.name}</th><td><ProviderBadge state={entry?.status||'unavailable'}/></td><td>{fmtTime(entry?.last_success)||'Unavailable'}</td><td>{fmtTime(entry?.last_failure)||'Unavailable'}</td><td>{entry?.last_latency_ms!=null?`${entry.last_latency_ms} ms`:'Unavailable'}</td><td>{entry?.last_error_category?.replaceAll('_',' ')||'None recorded'}</td></tr>})}</tbody></table></div></section>
       <div className="providers-footer-note"><p>Configured: ready, with no recorded success. Healthy: a live success is recorded. Degraded: the latest interaction failed after a prior success. Failed: no retained success after failure. Blocked: a provider restriction prevents use. Missing telemetry does not establish configuration or health.</p>
         <p className="small">
           Zero ingested observations during FIRMS synchronization is normal when no new detections occur within the satellite query window. Real ingestion is isolated from demo fixtures; provider credentials never touch client browsers.

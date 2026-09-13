@@ -64,6 +64,8 @@ import {
   NotificationPreferences,
 } from '../lib/api';
 
+import type {ReviewCandidate} from '../lib/reviewCandidates';
+import CommandSummary from '../components/CommandSummary';
 import OperationalSummary from '../components/OperationalSummary';
 import AuthLayout from '../components/AuthLayout';
 import OverviewKPIs from '../components/OverviewKPIs';
@@ -72,7 +74,11 @@ import EventTable from '../components/EventTable';
 import EventDetailDrawer from '../components/EventDetailDrawer';
 import ProviderHealthGrid from '../components/ProviderHealthGrid';
 import AlertCenter from '../components/AlertCenter';
-import AnalyticsView from '../components/AnalyticsView';
+import {LoadingSkeleton} from '../components/UI';
+import {useDialogFocus} from '../lib/useDialogFocus';
+const AnalyticsView = dynamic(() => import('../components/AnalyticsView'), {loading:()=> <LoadingSkeleton label="Loading analytics"/>});
+const IntelligenceWorkspace = dynamic(() => import('../components/intelligence/IntelligenceWorkspace'), {loading:()=> <LoadingSkeleton label="Loading intelligence tools"/>});
+const ModelView = dynamic(() => import('../components/ModelView'), {loading:()=> <LoadingSkeleton label="Loading model"/>});
 import CopilotModal from '../components/CopilotModal';
 import NotificationSettings from '../components/NotificationSettings';
 import ReviewCenter from '../components/ReviewCenter';
@@ -90,6 +96,9 @@ const VIEWS = [
   { name: 'Live Map', icon: MapPinned },
   { name: 'Events', icon: ScanLine },
   { name: 'Alerts', icon: Bell },
+  { name: 'Model', icon: Database },
+  { name: 'Intelligence Lab', icon: Layers },
+  { name: 'System status', icon: Activity },
   { name: 'Analytics', icon: ChartNoAxesCombined },
   { name: 'AI Copilot', icon: Sparkles },
   { name: 'Providers', icon: Server },
@@ -128,6 +137,7 @@ export default function Page() {
   const [user, setUser] = useState<User | null>(null);
   const [events, setEvents] = useState<ThermalEvent[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertsAvailable,setAlertsAvailable]=useState(false);
   const [eventsAvailable, setEventsAvailable] = useState(false);
   const [reviewReadiness, setReviewReadiness] = useState<{reviewed_rows:number;eligible_rows:number;classes_present:number;classes_total:number;split_groups:number;training_ready:boolean;missing:string[];problems:string[]} | null>(null);
   const [model, setModel] = useState<ModelStatus | null>(null);
@@ -141,7 +151,7 @@ export default function Page() {
 
   // Filters
   const [reviewFilter,setReviewFilter] = useState('All reviews');
-  const [reviewCandidates,setReviewCandidates] = useState<{event_id:string;reviewed:string;label:string}[] | null>(null);
+  const [reviewCandidates,setReviewCandidates] = useState<ReviewCandidate[] | null>(null);
   const [classificationFilter,setClassificationFilter] = useState('All classes');
   const [filter, setFilter] = useState('All risk levels');
   const [search, setSearch] = useState('');
@@ -196,6 +206,11 @@ export default function Page() {
   const [trainBusy, setTrainBusy] = useState(false);
   const [ackBusy, setAckBusy] = useState<number | null>(null);
   const [providerHealth, setProviderHealth] = useState<ProviderStatusResponse | null>(null);
+  const [providerBusy,setProviderBusy]=useState(false);
+  const [providerError,setProviderError]=useState('');
+  const [providerAttempt,setProviderAttempt]=useState(0);
+  const [notificationError,setNotificationError]=useState('');
+  const [notificationAttempt,setNotificationAttempt]=useState(0);
   const [hazards, setHazards] = useState<EonetHazard[]>([]);
   const [hazardsAvailable, setHazardsAvailable] = useState<boolean | null>(null);
   const [showHazards, setShowHazards] = useState(false);
@@ -228,6 +243,14 @@ export default function Page() {
   const [accountOpen,setAccountOpen] = useState(false);
   const [compactDisplay,setCompactDisplay] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavigation,setMobileNavigation]=useState(false);
+  const navigationRef=useDialogFocus<HTMLElement>(sidebarOpen&&mobileNavigation);
+  useEffect(()=>{const query=window.matchMedia('(max-width: 1024px)');const update=()=>setMobileNavigation(query.matches);update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update)},[]);
+  useEffect(()=>{if(!sidebarOpen)return;const close=(e:KeyboardEvent)=>{if(e.key==='Escape')setSidebarOpen(false)};document.addEventListener('keydown',close);return()=>document.removeEventListener('keydown',close)},[sidebarOpen]);
+
+  const [filtersRestored,setFiltersRestored]=useState(false);
+  useEffect(()=>{const p=new URLSearchParams(window.location.search);const risk=p.get('risk');if(risk&&['All risk levels','Critical','High','Medium','Low','Normal'].includes(risk))setFilter(risk);const source=p.get('sensor');if(source&&['All sensors','VIIRS only','MODIS only','Cross-sensor'].includes(source))setSourceFilter(source);const age=p.get('age');if(age&&['All time','24 hours','7 days','30 days'].includes(age))setDateFilter(age);setFiltersRestored(true)},[]);
+  useEffect(()=>{if(!filtersRestored)return;const url=new URL(window.location.href);for(const [key,value,defaultValue] of [['risk',filter,'All risk levels'],['sensor',sourceFilter,'All sensors'],['age',dateFilter,'All time']]){if(value===defaultValue)url.searchParams.delete(key);else url.searchParams.set(key,value)}window.history.replaceState(null,'',url)},[filtersRestored,filter,sourceFilter,dateFilter]);
 
   // Health and request tracking
   const [healthError, setHealthError] = useState('');
@@ -317,7 +340,7 @@ export default function Page() {
         });
         if (request !== workspaceRequest.current) return;
         if (data.events !== undefined) { setEvents(data.events); setEventsAvailable(true); }
-        if (data.alerts !== undefined) setAlerts(data.alerts);
+        if (data.alerts !== undefined) {setAlerts(data.alerts);setAlertsAvailable(true);}
         if (data.model !== undefined) setModel(data.model);
         setError(data.errors.join(' '));
         if(data.events !== undefined || data.alerts !== undefined || data.model !== undefined) setLastRefresh(new Date().toISOString());
@@ -333,13 +356,14 @@ export default function Page() {
   function handleFailure(e: unknown) {
     if (e instanceof ApiError && e.status === 401) {
       workspaceRequest.current++;
+      setBusy(false);
       storeToken('');
       setToken('');
       setUser(null);
       setAuthStatus('unauthenticated');
       setUnauthView('login');
       setEvents([]);
-      setAlerts([]);
+      setAlerts([]);setAlertsAvailable(false);
       setModel(null);
       setEvidence(null);
       setHistory([]);
@@ -407,7 +431,7 @@ export default function Page() {
   useEffect(()=>{
     if (!token || user?.role !== 'admin') {setReviewCandidates(null);return;}
     let active=true;
-    apiGet<{candidates:{event_id:string;reviewed:string;label:string}[]}>('/model/review-candidates',token).then(r=>{if(active)setReviewCandidates(r.candidates)}).catch(()=>{if(active)setReviewCandidates(null)});
+    apiGet<{candidates:ReviewCandidate[]}>('/model/review-candidates',token).then(r=>{if(active)setReviewCandidates(r.candidates)}).catch(()=>{if(active)setReviewCandidates(null)});
     return ()=>{active=false};
   },[token,user]);
 
@@ -435,24 +459,24 @@ export default function Page() {
     };
   }, [token, showHazards, mapMode]);
 
-  // Notification preferences
+  // Optional panels retain existing data on refresh failure and expose a retry.
   useEffect(() => {
     if (!token) return;
-    apiGet<NotificationPreferences>('/auth/notifications', token).then(setNotif).catch(() => {});
-  }, [token, notice]);
+    let active=true;setNotificationError('');
+    apiGet<NotificationPreferences>('/auth/notifications', token).then(data=>{if(active)setNotif(data)}).catch(e=>{if(active){setNotificationError('Notification preferences could not be loaded.');if(e instanceof ApiError&&e.status===401)handleFailure(e)}});
+    return()=>{active=false};
+  }, [token, notice,notificationAttempt]);
 
-  // Provider health status
   useEffect(() => {
-    if ((view === 'Providers' || view === 'Overview' || view === 'System status') && token) {
-      fetchProviderStatus(token)
-        .then(setProviderHealth)
-        .catch(() => setProviderHealth(null));
-    }
-  }, [view, token, notice]);
+    if (!['Providers','Overview','System status'].includes(view)||!token)return;
+    let active=true;setProviderBusy(true);setProviderError('');
+    fetchProviderStatus(token).then(data=>{if(active)setProviderHealth(data)}).catch(e=>{if(active){setProviderError('Provider telemetry could not be refreshed.');if(e instanceof ApiError&&e.status===401)handleFailure(e)}}).finally(()=>{if(active)setProviderBusy(false)});
+    return()=>{active=false};
+  }, [view, token, notice,providerAttempt]);
 
   // Admin data
   useEffect(() => {
-    if (view === 'Settings' && user?.role === 'admin' && token) {
+    if (['Settings','Intelligence Lab','System status'].includes(view) && user?.role === 'admin' && token) {
       Promise.all([
         apiGet<Organization[]>('/admin/organizations', token),
         apiGet<Assignment[]>('/admin/assignments', token),
@@ -542,7 +566,7 @@ export default function Page() {
     setReviewCandidates(null);
     setProviderHealth(null);
     setNotif(null);
-    setAlerts([]);
+    setAlerts([]);setAlertsAvailable(false);
     setModel(null);
     setFirms(null);
     setEvidence(null);
@@ -1061,8 +1085,10 @@ export default function Page() {
   if (!user) return null;
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#workspace-content">Skip to main content</a>
+      {sidebarOpen && mobileNavigation && <button className="navigation-scrim" aria-label="Close navigation" tabIndex={-1} onClick={()=>setSidebarOpen(false)}/>}
       {/* Sidebar */}
-      <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      <aside ref={navigationRef} id="workspace-navigation" role={sidebarOpen&&mobileNavigation?'dialog':undefined} aria-modal={sidebarOpen&&mobileNavigation?true:undefined} aria-label="Workspace navigation" className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <a
           className="brand"
           href="/"
@@ -1091,8 +1117,9 @@ export default function Page() {
         </div>
 
         <button type="button" className="button collapse-sidebar" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><Menu size={16}/></button><span className="nav-label">COMMAND VIEWS</span>
-        <nav>
-          {VIEWS.map(({ name, icon: Icon }) => {
+        {sidebarOpen&&mobileNavigation&&<button className="button navigation-close" onClick={()=>setSidebarOpen(false)}>Close navigation <X size={16}/></button>}
+        <nav aria-label="Workspace views">
+          {['Overview','Intelligence','Operations','System'].map(group=><div className="navigation-group" key={group}><p className="nav-label">{group}</p>{VIEWS.filter(item=>({Overview:['Overview','Live Map','Events'],Intelligence:['Analytics','Model','Review & Labels','AI Copilot','Intelligence Lab'],Operations:['Alerts'],System:['Providers','System status','Settings']}[group]||[]).includes(item.name)).map(({ name, icon: Icon }) => {
             const isActive = view === name;
             return (
               <button
@@ -1114,7 +1141,7 @@ export default function Page() {
                 )}
               </button>
             );
-          })}
+          })}</div>)}
         </nav>
 
         <div className="sidebar-bottom">
@@ -1164,6 +1191,7 @@ export default function Page() {
               type="button"
               className="mobile-menu-toggle"
               aria-label="Toggle navigation sidebar"
+              aria-controls="workspace-navigation"
               aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
@@ -1208,7 +1236,7 @@ export default function Page() {
         </header>
 
         {/* Page Content View */}
-        <main className="content">
+        <main id="workspace-content" tabIndex={-1} className="content">
           {/* Header Title Bar */}
           <div className="page-title">
             <div>
@@ -1228,9 +1256,10 @@ export default function Page() {
                   ? 'ThermaGuard AI Evidence Copilot'
                   : view === 'Providers'
                   ? 'External Providers & Telemetry'
+                  : view === 'Model' ? 'Model Evaluation'
                   : view === 'Review & Labels'
                   ? 'Machine Learning Model & Review Center'
-                  : 'Workspace Configuration'}
+                  : view === 'Intelligence Lab' ? 'Evidence & Operations Intelligence' : view === 'System status' ? 'System Status & Transparency' : 'Workspace Configuration'}
               </h1>
               <p>
                 {view === 'Overview'
@@ -1247,9 +1276,10 @@ export default function Page() {
                   ? 'Plain-language operational explanations grounded strictly in verified event data.'
                   : view === 'Providers'
                   ? 'Real-time telemetry, latency metrics, and API integration readiness.'
+                  : view === 'Model' ? 'Held-out validation, test metrics, class performance and feature provenance.'
                   : view === 'Review & Labels'
                   ? 'RandomForest classifier training gate (30+ rows, 5 classes) and data safeguards.'
-                  : 'Manage notification radius, coordinates, and organization assignments.'}
+                  : ['Intelligence Lab','System status'].includes(view) ? 'Transparent frontend tools using existing data and supported API contracts.' : 'Manage notification radius, coordinates, and organization assignments.'}
               </p>
             </div>
 
@@ -1307,6 +1337,7 @@ export default function Page() {
                 demo={demo}
               />
 
+              <CommandSummary events={events} alerts={alerts} eventsAvailable={eventsAvailable} alertsAvailable={alertsAvailable} reviewedRows={reviewReadiness?.reviewed_rows} candidates={reviewCandidates} loading={busy} onAlerts={()=>setView('Alerts')} onReview={()=>setView('Review & Labels')}/>
               <OperationalSummary events={events} alerts={alerts} firms={firms} providers={providerHealth} backendOk={backendOk} model={model}/>
               {/* Map Section */}
               <section className="map-intelligence-section">
@@ -1434,7 +1465,7 @@ export default function Page() {
                     {busy && !events.length ? (
                       <p className="empty">Loading events…</p>
                     ) : (
-                      filtered.slice(0, 30).map((e) => (
+                      [...filtered].sort((a,b)=>(b.risk?.risk_score??-1)-(a.risk?.risk_score??-1)).slice(0, 30).map((e) => (
                         <button
                           key={e.id}
                           type="button"
@@ -1638,7 +1669,7 @@ export default function Page() {
                       <h3>Monitored Events</h3>
                       <span className="badge normal">{filtered.length}</span>
                     </div>
-                    {filtered.slice(0, 30).map((e) => (
+                    {[...filtered].sort((a,b)=>(b.risk?.risk_score??-1)-(a.risk?.risk_score??-1)).slice(0, 30).map((e) => (
                       <button
                         key={e.id}
                         type="button"
@@ -1803,6 +1834,9 @@ export default function Page() {
           {view === 'Providers' && (
             <ProviderHealthGrid
               providerHealth={providerHealth}
+              loading={providerBusy}
+              error={providerError}
+              onRetry={()=>setProviderAttempt(n=>n+1)}
               isAdmin={user.role === 'admin'}
               demo={demo}
               syncBusy={syncBusy}
@@ -1810,7 +1844,9 @@ export default function Page() {
             />
           )}
 
+          {['Intelligence Lab','System status'].includes(view)&&<IntelligenceWorkspace key={`${user.id}-${view}`} token={token} onUnauthorized={handleFailure} events={events} eventsAvailable={eventsAvailable} alerts={alerts} providers={providerHealth} model={model} firms={firms} candidates={reviewCandidates} assignments={assignments} notif={notif} user={user} system={view==='System status'} onInspect={choose} onNavigate={setView} onCopilot={(event,prompt)=>{choose(event);setQuestion(prompt);setCopilot(true)}}/>}
           {/* VIEW: Review & Labels */}
+          {view === 'Model' && <ModelView token={token} model={model} onUnauthorized={handleFailure}/>}
           {view === 'Review & Labels' && (
             <ReviewCenter
               readiness={reviewReadiness}
@@ -1826,6 +1862,8 @@ export default function Page() {
           {view === 'Settings' && (
             <><section className="review-card"><h2>Profile &amp; display</h2><p>{user.email} · {user.role}</p><label><input type="checkbox" checked={compactDisplay} onChange={e=>setCompactDisplay(e.target.checked)}/>Compact display</label><p>Provider configuration is managed on the server. <button className="button" onClick={()=>setView('Providers')}>View provider status</button></p><p>Device registration: not exposed by the backend status API. Firebase: {providerHealth?.providers.firebase?.status || 'Unavailable'}.</p></section><NotificationSettings
               authToken={token}
+              loadError={notificationError}
+              onRetry={()=>setNotificationAttempt(n=>n+1)}
               notif={notif}
               notifBusy={notifBusy}
               onSaveNotif={saveNotif}
